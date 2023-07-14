@@ -1,0 +1,15 @@
+n0f      =   16  16                ! number of osc. shells (F and B)
+def-bas  =    -0.000                ! deformation of the h.o. basis 
+b0       =    -1.500                ! oscillator length
+def-ini  =    -0.000                ! deformation of the initial W.S. pot 
+inin     =    1    1               ! initialization
+Sm 180                             ! nucleus under consideration
+c-------------------------------------------------------------------
+Init.Gap =    1.000     1.000      ! Initial values for the Gaps
+c-------------------------------------------------------------------
+Force    =  DD-PC1                 ! Parameterset of the Lagrangian
+c-------------------------------------------------------------------
+icstr    =  1                      ! constraint calculation (0=no)
+cquad    =  0.005                  ! spring constant
+temp     =  1.01                    ! temperature in MeV
+matel    =  0                      ! 0 calculates pair. mat. el, 1 reads from wnn.del
