@@ -80,6 +80,8 @@ The results of the calculations are stored in the ```results.out```file. It has 
 
 Other details regarding the iteration-by-iteration convergence for each CPU are stored in ```dirhb_5xx.out```files, where xx ranges from 01 to 10.
 
+The vector densities are plotted in an $(r,z)$ plane for the Nucleus+Vapor system ```dirhb.plo``` and Vapor only system ```dirhb_vapor.plo``` for quadrupole deformation $\beta_2$ which minimizes the free energy $F = E - TS$.
+
 -------------------------------------------
 
 To benchmark the compilation we have included the ```results.out```file which contains an example run with the provided ```dirhb.dat``` file.
