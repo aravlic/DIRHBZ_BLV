@@ -24,7 +24,7 @@ c
       character tp*1,tis*1,tit*8,tl*1                           ! textex
       character nucnam*2                                        ! nucnuc
       character tb*6                                            ! blokap
-      character tt*8                                            ! quaosc
+      character tt*11                                            ! quaosc
 c
 c
       common /basnnn/ n0f,n0b
@@ -232,7 +232,7 @@ c
       write(l6,*) '****** END BASE ************************************'
       endif
 c
-  100 format('[',3i2,']')
+  100 format('[',3i3,']')
   101 format(4i2)                  
   102 format(i4,a,i2,a,i2,a,i2,a,i2,a,i2,3h/2 ,a) 
   103 format(a,2i10)
@@ -256,7 +256,8 @@ c
       character tb*6                                           ! blokap         
 c
       ! broyden iteration sizes
-      parameter (nn = 2*MVTX+2*MVX+2+1)
+c      parameter (nn = 2*MVTX+2*MVX+2+1)
+      parameter (nn = 4*MVTX+4*MVX+2+1)
       parameter (mm = 7)      
 c
       common /baspar/ hom,hb0,b0
@@ -276,6 +277,10 @@ c
      &                bwork(mm),curv(nn),bw0,ibwork(mm)      
       common /broyde1/ vin(nn)
       common /broyde2/ ibroyd
+c---- add vapor contribution to the mixing procedure
+      common /deldelv/ de_v(nhhx,nb2x) 
+      common /gamgamv/ hh_v(nhhx,nb2x)
+
       dimension vou(nn)
       data bmix /0.7d0/
 c
@@ -318,6 +323,25 @@ c
                      vin(ipos) = de(i1+(i2-1)*nh,m) 
                   enddo
                enddo           
+c---- this is the vapor phase:
+            do i2 = 1,nf              
+                  do i1 = i2,nf
+                  ipos=ipos+1                    
+                  vin(ipos) = hh_v(i1+(i2-1)*nh,m) 
+                  enddo
+            enddo                    
+            do i2 = nf+1,nh              
+                  do i1 = i2,nh
+                  ipos=ipos+1                    
+                  vin(ipos) = hh_v(i1+(i2-1)*nh,m) 
+                  enddo
+            enddo                    
+            do i2 = 1,nf
+                  do i1 = i2,nf
+                  ipos=ipos+1
+                  vin(ipos) = de_v(i1+(i2-1)*nh,m) 
+                  enddo
+            enddo           
             enddo  !ib
             ipos=ipos+1
             vin(ipos)=ala(it)
@@ -349,13 +373,32 @@ c
                do i1 = i2,nf               
                   ipos=ipos+1
                   vou(ipos) = de(i1+(i2-1)*nh,m) -vin(ipos)
-                  if(del(it).lt.1.d-5) then 
-                     vou(ipos)=zero
-                     vin(ipos)=zero
-                  endif
+c                  if(del(it).lt.1.d-5) then 
+c                     vou(ipos)=zero
+c                     vin(ipos)=zero
+c                  endif
                enddo
+            enddo 
+c---- these are vapor fields:
+            do i2 = 1,nf
+            do i1 = i2,nf
+            ipos=ipos+1
+            vou(ipos) = hh_v(i1+(i2-1)*nh,m) -vin(ipos)               
+            enddo
+            enddo                       
+            do i2 = nf+1,nh
+            do i1 = i2,nh
+            ipos=ipos+1
+            vou(ipos) = hh_v(i1+(i2-1)*nh,m) -vin(ipos)               
+            enddo
+            enddo                       
+            do i2 = 1,nf
+            do i1 = i2,nf               
+            ipos=ipos+1
+            vou(ipos) = de_v(i1+(i2-1)*nh,m) -vin(ipos)
+            enddo
             enddo            
-         enddo
+         enddo !ib
          ipos=ipos+1
          vou(ipos)=ala(it)-vin(ipos)
       enddo   
@@ -366,6 +409,7 @@ c
       do i=1,nnn
          si = max( si, abs(vou(i)) )          
       enddo
+c      write(*,*) si
       ! broyden's mixing procedure starts here...
       if ( mm .eq. 0 .or. ii.eq. 1 .or. ibroyd.eq.0) then ! linear mixing 
          do i = 1, nnn
@@ -434,9 +478,11 @@ c
          call dcopy( nnn, vin, 1, dv(1,inex), 1 )
          
          curvature = ddot( nnn, vou, 1, curv, 1 )
+c         write(*,*) 'curvatre = ', curvature
          if( curvature .gt. 0.0d0 ) then
             ilast = 1
             do i = 1, nnn
+c               write(*,*) i, curv(i)
                vin(i) = vin(i) + curv(i)
             enddo
 c            write(*,100) 'broyden mixing: mm =', iuse, 'c=',curvature
@@ -450,7 +496,7 @@ c            write(*,100) 'linear  mixing: mm =', iuse, 'c=',curvature
       endif
  100  format(10x,a,i2,2x,a,f16.8)
       ! broyden's mixing procedure ends here
-
+c      write(*,*) 'After mixing'
       ! set the new matrix elements
       ipos=0
       do it = 1,2
@@ -479,7 +525,36 @@ c            write(*,100) 'linear  mixing: mm =', iuse, 'c=',curvature
                   de(i1+(i2-1)*nh,m) = vin(ipos)  
                   de(i2+(i1-1)*nh,m) = vin(ipos)  
                enddo
-            enddo           
+            enddo
+c---- this is for vapor:
+            do i2 = 1,nf
+                  do i1 = i2,nf
+                  ipos=ipos+1
+                  hh_v(i1+(i2-1)*nh,m) = vin(ipos)
+                  hh_v(i2+(i1-1)*nh,m) = vin(ipos)
+                  enddo
+            enddo            
+            do i2 = nf+1,nh
+                  do i1 = i2,nh
+                  ipos=ipos+1
+                  hh_v(i1+(i2-1)*nh,m) = vin(ipos)
+                  hh_v(i2+(i1-1)*nh,m) = vin(ipos)
+                  enddo
+            enddo            
+            do i2 = 1,nf
+                  do i1 = i2,nf
+                  ipos=ipos+1
+                  de_v(i1+(i2-1)*nh,m) = vin(ipos)  
+                  de_v(i2+(i1-1)*nh,m) = vin(ipos)  
+                  enddo
+            enddo
+c--- print matrix - Ravlic
+c      do n1 = 1,nh
+c        do n2 = 1,nh
+c           write(*,*) m,n1, n2, hh(n1+(n2-1)*nh,m),de(n1+(n2-1)*nh,m)
+c        enddo
+c      enddo
+
          enddo  !ib
          ipos=ipos+1
          ala(it) =vin(ipos)
@@ -492,6 +567,8 @@ c
       write(l6,*) '****** END BROYDEN *************************'
       endif
 c
+c      write(*,*) 'Broyden mixing'
+c      read*
       return
 c-end-BROYDEN
       end
@@ -5618,6 +5695,226 @@ c-end-BROYDEN
       END
 c======================================================================c
 
+      subroutine canon_mod(lpr)
+
+c======================================================================c
+c
+c     transforms to the canonical basis
+c     version for RHB
+c----------------------------------------------------------------------c
+      implicit real*8 (a-h,o-z)
+      include 'dirhb.par'
+c
+      logical lpr,lpr1
+c
+      character tb*6                                            ! blokap
+      character tt*11                                            ! quaosc
+      character tp*1,tis*1,tit*8,tl*1                           ! textex
+c
+      dimension aa(NHHX),dd(NHHX),v2(NHX),z(NHX),eb(NHX),h(NHX),d(NHX)
+c      
+      common /blodir/ ka(NBX,4),kd(NBX,4)
+      common /blokap/ nb,kb(NBX),mb(NBX),tb(NBX)
+      common /bloosc/ ia(NBX,2),id(NBX,2)
+      common /gamgam/ hh(NHHX,NB2X)
+      common /deldel/ de(NHHX,NB2X)
+      common /eeecan/ eecan(KX,4),decan(KX,4),vvcan(KX,4),
+     &                fgcan(NHX,KX,4),ibkcan(KX,4)
+      common /blocan/ kacan(nbx,4),kdcan(nbx,4),nkcan(4)
+      common /mathco/ zero,one,two,half,third,pi
+      common /fermi / ala(2),tz(2)
+      common /optopt/ itx,icm,icou,ipc,inl,idd
+      common /quaosc/ nt,nz(NTX),nr(NTX),ml(NTX),ms(NTX),np(NTX),tt(NTX)
+      common /tapes / l6,lin,lou,lwin,lwou,lplo,laka,lvpp
+      common /textex/ tp(2),tis(2),tit(2),tl(0:30)
+      common /waveuv/ fguv(NHBX,KX,4),equ(KX,4)     
+      common /temp/ temp
+ 
+      data ash/100.d0/
+c
+      if (lpr) then
+      write(l6,*) '****** BEGIN CANON *********************************'
+      endif 
+c
+c
+      open(444, file = 'canonbas_mod_p.out', status = 'unknown')
+      open(445, file = 'canonbas_mod_n.out', status = 'unknown')
+c======================================================================c
+      do it = 1,2   ! loop over neutrons and protons
+c======================================================================c
+         if (it.eq.1) lcbas = 445
+         if (it.eq.2) lcbas = 444
+
+         if (lpr) then
+            write(l6,100) tit(it)
+            write(l6,101) 'K pi','[nz,nr,ml]','smax',
+     &                    'eecan','vvcan','decan'
+            write(lcbas,101) 'K pi','[nz,nr,ml]','smax',
+     &                    'eecan','vvcan','decan'
+
+         endif
+         klp = 0
+         kla = 0
+c======================================================================c
+      do ib = 1,nb   ! loop over the blocks
+c======================================================================c
+         nf  = id(ib,1)
+         ng  = id(ib,2)
+         nh  = nf + ng
+         nhb = 2*nh 
+         i0f = ia(ib,1)
+         i0g = ia(ib,2)
+         m   = ib + (it-1)*NBX
+         kf  = kd(ib,it)
+         kg  = kd(ib,it+2)
+         k0f = ka(ib,it)
+         k0g = ka(ib,it+2)
+c
+c------- transformation to the canonical basis
+c------- calculation of the generalized density V*VT
+         do n2 = 1,nh 
+         do n1 = 1,nh 
+            s = zero  
+            do k = k0f+1,k0f+kf
+c------- Ravlic: finite-temperature
+               if (temp.lt.1e-6) then
+                       ftemp = 0
+               else
+                       ftemp = 1.d0/(1.d0+dexp(equ(k,it)/temp))
+               endif
+ 
+               s = s + fguv(nh+n1,k,it)*fguv(nh+n2,k,it)*(1.d0-ftemp)
+     &               + fguv(n1,k,it)*fguv(n2,k,it)*ftemp
+            enddo  
+            s1 = zero
+            do k = k0g+1,k0g+kg
+               s1 = s1 + fguv(nh+n1,k,it+2)*fguv(nh+n2,k,it+2)
+            enddo
+            aa(n1+(n2-1)*nh) = s + ash*s1
+         enddo   ! n1         
+         enddo   ! n2
+c       
+c------- diagonalizaton
+         call sdiag(nh,nh,aa,v2,dd,z,1)
+         eps=1.0e-6
+         call degen(nh,nh,v2,dd,hh(1,m),eb,eps,aa,z)
+c
+c        major component of the wave function should be > 0
+         do k = 1,nh     
+            cmax = zero
+            do n = 1,nh
+               s = abs(dd(n+(k-1)*nh))
+               if (s.gt.abs(cmax)) cmax = dd(n+(k-1)*nh)
+            enddo   ! n
+            if (cmax.lt.zero) then
+               do n = 1,nh
+                  dd(n+(k-1)*nh) = - dd(n+(k-1)*nh)
+               enddo   ! n
+            endif
+         enddo   ! k
+c------- diagonal matrix elements of HH and DE in the canonical basis
+         do k = 1,nh     
+            hk = zero
+            dk = zero
+            do n2 = 1,nh
+               h2 = zero
+               d2 = zero
+               do n1 = 1,nh
+                  h2 = h2 + dd(n1+(k-1)*nh)*hh(n1+(n2-1)*nh,m)
+                  d2 = d2 + dd(n1+(k-1)*nh)*de(n1+(n2-1)*nh,m)
+               enddo   
+               hk = hk + h2*dd(n2+(k-1)*nh)
+               dk = dk + d2*dd(n2+(k-1)*nh)
+            enddo
+            h(k) = hk
+            d(k) = dk
+         enddo   ! k
+c
+c------- reordering according to the energy h(k)
+         call ordx(nh,h,d,v2,dd)
+c
+         do k = 1,nh     
+            if (v2(k).lt.zero .or. v2(k).gt.2.d0) v2(k) = zero
+            if (v2(k).gt.one) v2(k) = one
+         enddo ! k
+c                  
+         kacan(ib,it)   = klp
+         do k=1,nf     
+            klp=klp+1
+            eecan(klp,it)=h(ng+k)
+            decan(klp,it)=d(ng+k)
+            vvcan(klp,it)=v2(ng+k)
+            ibkcan(klp,it)=ib
+            do n = 1,nh
+               fgcan(n,klp,it)=dd(n+(ng+k-1)*nh)
+            enddo
+         enddo
+         kdcan(ib,it)   = klp - kacan(ib,it)
+c
+         kacan(ib,it+2) = kla
+         do k=1,ng
+            kla=kla+1
+            eecan(kla,it+2)=h(k)
+            decan(kla,it+2)=d(k)
+            vvcan(kla,it+2)=v2(k)
+            ibkcan(kla,it+2)=ib
+            do n=1,nh
+               fgcan(n,kla,it+2)=dd(n+(k-1)*nh)
+            enddo
+         enddo
+         kdcan(ib,it+2) = kla - kacan(ib,it+2)          
+            
+c------- printout for particles
+         if (lpr) then
+         if (ib.eq.1) e0 = h(ng+1)
+         k1 = kacan(ib,it)+1
+         k2 = kacan(ib,it)+kdcan(ib,it)
+         if (kb(ib) .gt. 0) ip=1
+         if (kb(ib) .lt. 0) ip=2
+         do k = k1,k2
+            e1 = eecan(k,it)
+            v1 = vvcan(k,it)
+            d1 = decan(k,it)
+c           search for the main oscillator component
+            smax = zero
+            do i = 1,nf
+               s = abs(fgcan(i,k,it))
+               if (s.gt.smax) then
+                  smax = s
+                  imax = i
+               endif
+            enddo
+            fx = fgcan(imax,k,it)**2
+c
+            write(l6,102) k,tb(ib),tt(i0f+imax),fx,e1,v1,d1
+            write(lcbas,102) k,tb(ib),tt(i0f+imax),fx,e1,v1,d1
+
+            enddo  ! k
+          endif   ! lpr
+c======================================================================c
+   10 enddo      ! ib      end loop over the blocks
+c======================================================================c
+         nkcan(it)   = klp
+         nkcan(it+2) = kla         
+c======================================================================c
+      enddo      ! it      end loop over neutrons and protons --------c
+c======================================================================c
+c
+      if (lpr) then
+      write(l6,*) '****** END CANON ***********************************'
+      endif
+c
+  100 format(' single-particle energies and gaps ',1x,
+     &       'in the canonical basis: ',a,/1x,66(1h-))  
+
+  101 format(7x,a,a,2x,a,5x,a,5x,a,5x,a)
+  102 format(i4,3x,a6,a10,f7.2,5f10.4)
+c
+      return
+C-end-CANON
+      end
+c======================================================================c
+
       subroutine canon(lpr)
 
 c======================================================================c
@@ -5631,7 +5928,7 @@ c
       logical lpr,lpr1
 c
       character tb*6                                            ! blokap
-      character tt*8                                            ! quaosc
+      character tt*11                                            ! quaosc
       character tp*1,tis*1,tit*8,tl*1                           ! textex
 c
       dimension aa(NHHX),dd(NHHX),v2(NHX),z(NHX),eb(NHX),h(NHX),d(NHX)
@@ -5643,7 +5940,7 @@ c
       common /deldel/ de(NHHX,NB2X)
       common /eeecan/ eecan(KX,4),decan(KX,4),vvcan(KX,4),
      &                fgcan(NHX,KX,4),ibkcan(KX,4)
-      common /blocan/ kacan(nbx,4),kdcan(nbx,4),nkcan(2)
+      common /blocan/ kacan(nbx,4),kdcan(nbx,4),nkcan(4)
       common /mathco/ zero,one,two,half,third,pi
       common /fermi / ala(2),tz(2)
       common /optopt/ itx,icm,icou,ipc,inl,idd
@@ -5659,13 +5956,21 @@ c
       endif 
 c
 c
+      open(444, file = 'canonbas_p.out', status = 'unknown')
+      open(445, file = 'canonbas_n.out', status = 'unknown')
 c======================================================================c
       do it = 1,2   ! loop over neutrons and protons
 c======================================================================c
+         if (it.eq.1) lcbas = 445
+         if (it.eq.2) lcbas = 444
+
          if (lpr) then
             write(l6,100) tit(it)
             write(l6,101) 'K pi','[nz,nr,ml]','smax',
      &                    'eecan','vvcan','decan'
+            write(lcbas,101) 'K pi','[nz,nr,ml]','smax',
+     &                    'eecan','vvcan','decan'
+
          endif
          klp = 0
          kla = 0
@@ -5793,6 +6098,8 @@ c           search for the main oscillator component
             fx = fgcan(imax,k,it)**2
 c
             write(l6,102) k,tb(ib),tt(i0f+imax),fx,e1,v1,d1
+            write(lcbas,102) k,tb(ib),tt(i0f+imax),fx,e1,v1,d1
+
             enddo  ! k
           endif   ! lpr
 c======================================================================c
@@ -5812,7 +6119,7 @@ c
      &       'in the canonical basis: ',a,/1x,66(1h-))  
 
   101 format(7x,a,a,2x,a,5x,a,5x,a,5x,a)
-  102 format(i4,2x,a6,a8,f7.2,5f10.4)
+  102 format(i4,3x,a6,a10,f7.2,5f10.4)
 c
       return
 C-end-CANON
@@ -5914,7 +6221,7 @@ c
       logical lpr,lpar
 c
       character tb*6                                            ! blokap
-      character tt*8                                            ! quaosc
+      character tt*11                                            ! quaosc
       character nucnam*2                                        ! nucnuc
       
       dimension wc(MG4,KX),dz(MG4,KX),dr(MG4,KX)
@@ -5937,7 +6244,7 @@ c
       common /quaosc/ nt,nz(NTX),nr(NTX),ml(NTX),ms(NTX),np(NTX),tt(NTX)
       common /eeecan/ eecan(KX,4),decan(KX,4),vvcan(KX,4),
      &                fgcan(NHX,KX,4),ibkcan(KX,4)
-      common /blocan/ kacan(nbx,4),kdcan(nbx,4),nkcan(2)
+      common /blocan/ kacan(nbx,4),kdcan(nbx,4),nkcan(4)
       common /tapes / l6,lin,lou,lwin,lwou,lplo,laka,lvpp
  
 c
@@ -6270,6 +6577,7 @@ c======================================================================c
 c
 c     calculation of the Coulomb field                         
 c
+c     modified for BLV prescription
 c----------------------------------------------------------------------c
       implicit real*8 (a-h,o-z)
 c
@@ -6278,6 +6586,7 @@ c
       logical lpr
 c
       common /coulmb/ cou(MG),drvp(MG)
+      common /coulmbv/ cou_v(MG),drvp_v(MG)
       common /mathco/ zero,one,two,half,third,pi
       common /optopt/ itx,icm,icou,ipc,inl,idd
       common /procou/ ggc(MG,MG)
@@ -6293,9 +6602,10 @@ c
       do i = 1,MG
          s = zero
 	     do k = 1,MG
-	        s = s + ggc(i,k) * drvp(k)
+	        s = s + ggc(i,k) * (drvp(k)-drvp_v(k))
 	     enddo   ! k
 	     cou(i) = s
+           cou_v(i) = s
       enddo   ! i
 c
 c      if (lpr) call prigh(1,cou,one,'Coulom')
@@ -6550,10 +6860,10 @@ c
 c======================================================================c
 c---- signs and factorials
 c-----------------------------------------------------------------------
-      call gfv(IGFV)
-c      if (n.ne.IGFV) stop 'in DEFAULT: IGFV wrong for GFV'
-      call binom(IGFV)
-c      if (n.ne.IGFV) stop 'in DEFAULT: IGFV wrong for BINOM'
+      call gfv(n)
+      if (n.ne.IGFV) stop 'in DEFAULT: IGFV wrong for GFV'
+      call binom(n)
+      if (n.ne.IGFV) stop 'in DEFAULT: IGFV wrong for BINOM'
 c======================================================================c
 
 
@@ -6606,7 +6916,7 @@ c======================================================================c
 c     iteration
 c----------------------------------------------------------------------c
 c
-      maxi = 500             ! maximal number of iteration
+      maxi = 200             ! maximal number of iteration
 c     maxi = 1               ! remove
       si   = one             ! actual error in the main iteration
       epsi = 1.d-6           ! accuracy for the main iteration
@@ -6712,7 +7022,7 @@ c
       logical  lpr
 c
       character tb*6                                            ! blokap
-      character tt*8                                            ! quaosc
+      character tt*11                                            ! quaosc
       character tp*1,tis*1,tit*8,tl*1                           ! textex
 c
       dimension pnn(NNNX)
@@ -6743,10 +7053,17 @@ c        call aprint(3,1,1,nh,nx,nx,aka(1,it),' ',' ','KA++')
 c        call aprint(3,1,1,nh,nx,nx,wnn(1,nn),' ',' ','WNN++')
          s = zero
          do i = 1,mv
+            if (wnn(i,nn).ne.wnn(i,nn)) then
+                    write(*,*) 'NaN in wnn !'
+            endif
             s = s + wnn(i,nn)*aka(i,it)
          enddo   ! i
          pnn(nn) = s
-      enddo  ! nn	
+         if (pnn(nn).ne.pnn(nn)) then
+                 stop 'NaN in pnn !'
+         endif
+      enddo  ! nn
+c      write(*,*) 'First part: ', mv, nnmax, NNNX      
 c     if (lpr) then
 c        write(6,*) 'PNN ',mv,nnmax
 c        do nn = 1,nnmax
@@ -6755,9 +7072,11 @@ c        enddo   ! nn
 c        write(l6,100) 'pnn',nnmax,(pnn(nn),nn=1,8)
 c     endif
 c
+c      write(*,*) 'Pairing-field matrix elements:'
       g = half*gl(it)
       i12 = 0
       do ib = 1,nb
+c         write(*,*) ib
          i0 = ia(ib,1)
          nf = id(ib,1)
          ng = id(ib,2)
@@ -6769,11 +7088,18 @@ c
             s = zero
             do nn = 1,nnmax
                s = s + wnn(i12,nn)*pnn(nn)
+c               write(*,*) ib, n1, n2, nn, wnn(i12,nn),pnn(nn)  
             enddo   ! nn
             de(n1+(n2-1)*nh,m) = -g*s
             de(n2+(n1-1)*nh,m) = -g*s
-         enddo  ! n1
+            enddo  ! n1
          enddo  ! n2 
+
+c         do n1 = 1,nf
+c           do n2 = 1,nf
+c              write(*,*) m, n1, n2, de(n1+(n2-1)*nh,m)
+c           enddo
+c         enddo
 c
       if (lpr.and.ib.eq.1) then
          k0 = ia(ib,1)+1
@@ -6790,6 +7116,7 @@ c
   100 format(a,i6,8f10.6)
   101 format(a,i5,a,f15.6)
 c
+c      read*
       return
 C-end-DELTA
       end
@@ -6810,7 +7137,7 @@ c
       character tp*1,tis*1,tit*8,tl*1                           ! textex
       character nucnam*2                                        ! nucnuc
       character tb*6                                            ! blokap
-      character tt*8                                            ! quaosc
+      character tt*11                                            ! quaosc
 c
       dimension rsh(2)
       dimension drs(MG,2),drv(MG,2)
@@ -6934,13 +7261,14 @@ c---- normalization and renormalization to particle number
             s  =  s + rv(i,it)
          enddo
          if (lpr) write(l6,'(a,i3,2f15.8)') '  Integral over rv:',it,s
-         s  = npr(it)/s
-         do i = 1,MG
-            rv(i,it)  = s*rv(i,it)
-            rs(i,it)  = s*rs(i,it)
-            drs(i,it) = s*drs(i,it)
-            drv(i,it) = s*drv(i,it)
-         enddo
+         write(l6,'(a,i3,2f15.8)') '  Integral over rv(N+V):',it,s
+c         s  = npr(it)/s
+c         do i = 1,MG
+c            rv(i,it)  = s*rv(i,it)
+c            rs(i,it)  = s*rs(i,it)
+c            drs(i,it) = s*drs(i,it)
+c            drv(i,it) = s*drv(i,it)
+c         enddo
 c
 c------- printout of the density in configuration space
 c         if (lpr) then
@@ -6998,7 +7326,7 @@ c
       logical lpr
 c
       character tb*6                                            ! blokap
-      character tt*8                                            ! quaosc
+      character tt*11                                            ! quaosc
       character tp*1,tis*1,tit*8,tl*1                           ! textex
 c
       common /blodir/ ka(NBX,4),kd(NBX,4)      
@@ -7021,6 +7349,7 @@ c
 c
       sp  = zero
       il = 0
+c       write(*,*) 'Single-particle density:'
 c=====================================================================c
       do ib = 1,nb            ! loop over the blocks
 c=====================================================================c
@@ -7059,6 +7388,14 @@ c            enddo                          ! no-sea approximation
             rosh(n2+(n1-1)*nh,m) = sr
          enddo   ! n1
          enddo   ! n2
+
+c--- Ravlic CHECK:
+c         do n1 = 1,nh
+c           do n2 = 1,nh
+c            write(*,*) m,n1,n2,rosh(n1+(n2-1)*nh,m)
+c           enddo
+c         enddo
+
 c
 c------- contributions of large components f*f to kappa
          i0  = ia(ib,1)
@@ -7076,8 +7413,8 @@ c------- Ravlic: finite-temperature
                else
                        ftemp = 1.d0/(1.d0+dexp(equ(k,it)/temp))
                endif
-               sk = sk - fguv(nh+n1,k,it)*fguv(n2,k,it)*ftemp
-     &                 + fguv(n1,k,it)*fguv(nh+n2,k,it)*(1.d0-ftemp)
+               sk = sk + fguv(nh+n1,k,it)*fguv(n2,k,it)*(1.d0-ftemp)
+     &                 - fguv(n1,k,it)*fguv(nh+n2,k,it)*(ftemp)
             enddo    ! k
 c----------------------------------
 c            do k = k1a,kea                   ! no-sea approximation
@@ -7087,6 +7424,10 @@ c            enddo                            ! no-sea approximation
             if (n1.eq.n2) sp = sp + i12*sk
             if (ml1.ne.ml2) sk = zero      ! remove question ???
             aka(il,it) = i12*sk
+c            write(*,*) it, il, aka(il,it)
+            if (aka(il,it).ne.aka(il,it)) then
+                    stop 'wrong in aka'
+            endif
          enddo   ! n1
          enddo   ! n2
          spk(it)=half*sp
@@ -7112,6 +7453,7 @@ c
 c
   100 format(//,a,i2,4a)
 c
+c      read*
       return
 C-end-DENSSH
       end
@@ -7131,7 +7473,7 @@ c
       include 'dirhb.par'
       logical lpr
 c
-      character tt*8                                            ! quaosc
+      character tt*11                                            ! quaosc
       character tb*6                                            ! blokap
 c
       common /blokap/ nb,kb(NBX),mb(NBX),tb(NBX)
@@ -7231,7 +7573,648 @@ c
 c     solves the RHB-Equation 
 c     IT    = 1 for neutrons
 c     IT    = 2 for protons
-c 
+c
+c     Implements method introduced by A. Bjelcic et al. [unpublished]
+c
+c     Diagonalization is split into 3 steps:
+c
+c     1) diagonalize h, get Z and calculate dt
+c     2) make H and diagonalize to get u,v
+c     3) transform u,v to U, V
+c
+c     Note that chemical pot procedure is changed
+c----------------------------------------------------------------------c
+      implicit real*8 (a-h,o-z)
+c
+      include 'dirhb.par'
+c
+      logical lpr,lprl
+c
+      character*1 bbb
+      character*8 tbb(NHBX)
+      character tp*1,tis*1,tit*8,tl*1                           ! textex
+      character tb*6                                            ! blokap
+      character tt*11                                            ! quaosc
+      character nucnam*2                                        ! nucnuc
+
+c---- Ravlic, LAPACK diagonalization
+      integer info, lwork
+      external dsyev
+      dimension W_HH_1(NHX)
+      dimension W_HH_2(2*NFX)
+      integer lwmax
+      parameter ( lwmax = 10000000 )
+      dimension HH_work(lwmax)
+      dimension work(lwmax)
+c      dimension WR(2*NFX), WR_2(2*NFX),WI(2*NFX)
+c      dimension VL(2*NFX,2*NFX), VR(2*NFX,2*NFX)
+      dimension W(2*NFX)
+
+c----------------
+      dimension hb(NHBQX),e(NHBX),ez(NHBX)
+c---- Ravlic, BCS
+      dimension elsp(KX), dksp(KX)
+      dimension elsp_v(KX), dksp_v(KX)
+c---- Ravlic      
+      dimension hh_hh(NHHX), zz_hh(NHHX)
+      dimension HH_1(NHX,NHX,NBX)
+      dimension HH_2(2*NFX,2*NFX,NBX)
+      dimension e_work(NHX), e_hh(NHX), ee_hh(NFFX,NB2X)
+      dimension ez_hh(NHX)
+      dimension de_hh(NFFX,NB2X)
+      dimension hb_hh(4*NFFX)
+      dimension fguv_temp(2*NFX,KX,4)
+      dimension de_new(NFFX,NB2X)
+      dimension Delta(NFX,NFX,NB2X)
+      dimension tempmat(NFX,NFX)
+      dimension Zh(NFX,NFX, NB2X)
+
+c
+      common /blodir/ ka(NBX,4),kd(NBX,4)
+      common /blokap/ nb,kb(NBX),mb(NBX),tb(NBX)
+      common /bloosc/ ia(NBX,2),id(NBX,2)
+      common /deldel/ de(NHHX,NB2X)
+      common /fermi / ala(2),tz(2)
+      common /gamgam/ hh(NHHX,NB2X)
+      common /iterat/ si,siold,epsi,xmix,xmix0,xmax,maxi,ii,inxt,iaut
+      common /mathco/ zero,one,two,half,third,pi
+      common /nucnuc/ amas,npr(3),nucnam
+      common /optopt/ itx,icm,icou,ipc,inl,idd
+      common /quaosc/ nt,nnn(NTX,5),tt(NTX)
+      common /tapes / l6,lin,lou,lwin,lwou,lplo,laka,lvpp
+      common /textex/ tp(2),tis(2),tit(2),tl(0:30)
+      common /waveuv/ fguv(NHBX,KX,4),equ(KX,4)
+      common /temp/ temp
+c---- vapor solution:
+      common /waveuvv/ fguv_v(NHBX,KX,4),equ_v(KX,4)
+c
+      data maxl/200/,epsl/1.d-8/,bbb/'-'/,lprl/.false./
+      data fm10/1.0d-10/
+ 
+c
+      if (.true.) then
+      write(l6,*) ' ****** BEGIN DIRHB ********************************'
+      endif
+
+         al    = ala(it)  
+c
+         sn  = zero
+         klp = 0
+         kla = 0
+c======================================================================c
+      do ib = 1,nb            ! loop over differnt blocks
+c======================================================================c
+         mul  = mb(ib)
+         nf   = id(ib,1)
+         ng   = id(ib,2)
+         nh   = nf + ng
+         nhb  = nh + nh
+         m    = ib + (it-1)*NBX
+
+c======================================================================c
+c        construct hh_hh matrix, (nf+ng) x (nf+ng) 
+c======================================================================c
+         do n2 = 1,nh
+           do n1 = n2,nh
+c              hh_hh(n1+(n2-1)*nh) = hh(n1+(n2-1)*nh,m)
+              HH_1(n1,n2,ib) = hh(n1+(n2-1)*nh,m)
+           enddo !n2
+         enddo !n1
+
+c         do n1 = 1,nh
+c           do n2 = 1,nh
+c              hh_hh(n1+(n2-1)*nh) = hh(n1+(n2-1)*nh,m)
+c           enddo !n2
+c         enddo !n1
+
+
+c======================================================================c
+c        diagonalization: e_work has nh eigenvalues
+c                         hh_hh has nh x nh eigenvectors
+c======================================================================c
+         
+c      call sdiag(nh,nh,hh_hh,e_work,hh_hh,ez_hh,+1)
+c--- try LAPACK function
+c    Query the optimal workspace.
+*
+      lwork = -1
+      CALL DSYEV( 'V', 'L', nh, HH_1(1,1,ib), NHX
+     &     , W_HH_1, work, lwork, info)
+      lwork = MIN( lwmax, INT( work( 1 ) ) )
+c      write(*,*) 'Dimension of problem: ', lwork, lwmax, info
+c      read*
+
+c     Solve eigenproblem.
+
+      CALL DSYEV( 'V', 'L', nh, HH_1(1,1,ib), NHX
+     &   , W_HH_1, work, lwork, info )
+
+c     Check for convergence.
+
+      IF( info.GT.0 ) THEN
+         WRITE(*,*)'The algorithm failed to compute eigenvalues.'
+         STOP
+      END IF
+c      write(*,*) 'info = ', info
+c--- print eigenvalues for test
+c      write(*,*) 'ib = ', ib
+c      do k = 1,nf
+c          write(*,*) k, W_HH_1(ng+k)
+cc          do n = 1,nh
+cc            write(*,*) HH_1(n,ng+k,ib),hh_hh(n+(ng+k-1)*nh)
+cc          enddo
+c      enddo
+cc      read*
+
+c======================================================================c
+c        store eigenvalues and eigenvectors
+c        
+c        Notice: anti-particles decouple at this point
+c        e_hh - matrix containing nf eigenvalues corresponding
+c        to particles
+c        zz_hh are the eigenvectors
+c======================================================================c
+
+         do k = 1,nf
+            e_hh(k) = W_HH_1(ng+k) !e_work(ng+k)
+            do n = 1,nh
+               zz_hh(n + (k-1)*nf) = HH_1(n,ng+k,ib)!hh_hh(n+(ng+k-1)*nh)
+            enddo
+         enddo !k
+         
+         do k = 1,nf
+            do n = 1,nf
+               Zh(n,k,m) = HH_1(n,ng+k,ib) !hh_hh(n+(ng+k-1)*nh)
+            enddo
+         enddo !k
+
+c         write(*,*) 'Diagonalized hh_hh matrix', ib, it
+c         write(*,*) 'Printing eigenvalues:'
+c         do k = 1,nh
+c             write(*,*) k, e_work(k) 
+c         enddo !k
+c         read*
+
+c======================================================================c
+c        store anti-particle contribution
+c======================================================================c
+
+         ka(ib,it+2) = kla
+         do k = 1,ng
+            kla = kla + 1
+            equ(kla,it+2) = W_HH_1(k) !e_work(k) 
+            do n = 1,nh
+               fguv(n,kla,it+2) = HH_1(n,k,ib) !hh_hh(n+(k-1)*nh)
+            enddo
+         enddo
+         kd(ib,it+2) = kla - ka(ib,it+2)
+ 
+c---- CHECK: anti-particle energies
+c         write(*,*) 'Anti-particle energies', ib, it
+c         do k = 1,ng
+c            write(*,*) k, equ(ka(ib,it+2)+k,it+2)
+c         enddo !k
+c         read*
+
+c======================================================================c
+c        calculate \tilde{de} = Z^T de Z
+c        \tilde{de} has dimenson nf x nf
+c======================================================================c
+c         do k = 1,nf
+c            do l = 1,nf
+c              de_hh(k+(l-1)*nf,m) = zero
+c            enddo
+c         enddo
+
+c         do k = 1,nf
+c            do l = 1,nf
+c              do i = 1,nf
+c                do j = 1,nf
+c              de_hh(k+(l-1)*nf,m) = de_hh(k+(l-1)*nf,m) +
+c     & zz_hh(i + (k-1)*nf)*de(i+(j-1)*nh,m)*zz_hh(j + (l-1)*nf)
+c                enddo !m
+c              enddo !n
+c            enddo !l
+c         enddo !k
+
+         do j = 1 , nf
+             do i = j , nf
+                 Delta(i,j,m) = de( i + (j-1)*nh , m )
+             enddo
+         enddo
+
+c--- using LAPACK functions
+         call dsymm('L','L',  nf,nf,
+     &              +1.0d+0,       Delta(1,1,m),NFX,
+     &                             Zh(1,1,m),NFX,
+     &              +0.0d+0,        tempmat(1,1),NFX  );
+         call dgemm('T','N',  nf,nf,nf,
+     &              +1.0d+0,       Zh(1,1,m),NFX,
+     &                              tempmat(1,1),NFX,
+     &              +0.0d+0,       Delta(1,1,m),NFX  );
+
+          do n2 = 1, nf
+            do n1 = 1 ,nf
+              de_hh(n1 + (n2-1)*nf,m) = Delta(n1,n2,m)
+            enddo
+          enddo
+c======================================================================c
+c        construct diagonal matrix ee_hh(nf x nf)
+c======================================================================c
+         do n1 = 1,nf
+           do n2 = 1,nf
+             if (n1.eq.n2) then
+              ee_hh(n1 + (n2-1)*nf,m) = e_hh(n1)
+             endif
+           enddo !n2
+         enddo !n1
+c======================================================================c
+c        construct H_\lambda 2nf x 2nf
+c======================================================================c
+cc------- calculation of the new RHB-Matrix w/o anti-particles:
+c         do n2 = 1,nf
+c         do n1 = n2,nf
+c            hb_hh(   n1+(   n2-1)*2*nf) =  ee_hh(n1+(n2-1)*nf,m) 
+c            hb_hh(nf+n1+(nf+n2-1)*2*nf) = -ee_hh(n1+(n2-1)*nf,m) 
+c            hb_hh(nf+n1+(   n2-1)*2*nf) =  de_hh(n1+(n2-1)*nf,m)
+c            hb_hh(nf+n2+(   n1-1)*2*nf) =  de_hh(n2+(n1-1)*nf,m)
+c         enddo
+c            hb_hh(   n2+(   n2-1)*2*nf) =  hb_hh(n2+(n2-1)*2*nf) - al
+c            hb_hh(nf+n2+(nf+n2-1)*2*nf) = -hb_hh(n2+(n2-1)*2*nf)
+c         enddo
+
+c------- construct the new matrix (note that it is symmetric)
+c------- also this saves the LOWER triangle
+         do n2 = 1,nf
+           do n1 = n2,nf
+              HH_2(n1,n2,ib) = ee_hh(n1+(n2-1)*nf,m)
+              HH_2(n1+nf,n2+nf,ib) = -ee_hh(n1+(n2-1)*nf,m)
+              HH_2(n1+nf,n2,ib) = de_hh(n1+(n2-1)*nf,m)
+              HH_2(n2+nf,n1,ib) = de_hh(n2+(n1-1)*nf,m)
+           enddo !n2
+           HH_2(n2,n2,ib) = HH_2(n2,n2,ib) - al
+           HH_2(n2+nf,n2+nf,ib) = -HH_2(n2,n2,ib)
+         enddo !n1
+c         write(*,*) 'Constructed new RHB matrix'
+c         do n1 = 1,2*nf
+c           do n2 = 1,2*nf
+c             write(*,*) n1, n2, HH_2(n1,n2,ib)
+c           enddo
+c         enddo
+c======================================================================c
+c        diagonalize H_\lambda 2nf x 2nf
+c======================================================================c
+c      write(*,*) 2*nf, 2*NFX, NHBX
+c      call sdiag(2*nf,2*nf,hb_hh,e,hb_hh,ez,+1)
+      lwork = -1
+      CALL DSYEV( 'V', 'L', 2*nf, HH_2(1,1,ib), 2*NFX
+     &     , W, work, lwork, info)
+      lwork = MIN( lwmax, INT( work( 1 ) ) )
+c      write(*,*) 'Dimension of problem 2: ', lwork, lwmax, info
+c      read*
+
+c     Solve eigenproblem.
+
+      CALL DSYEV( 'V', 'L', 2*nf, HH_2(1,1,ib), 2*NFX
+     &   , W, work, lwork, info )
+
+c     Check for convergence.
+
+      IF( info.GT.0 ) THEN
+         WRITE(*,*)'The algorithm failed to compute eigenvalues.'
+         STOP
+      END IF
+
+c      read*
+c--- print eigenvalues for test
+c      do k = 1,nf
+c          write(*,*) '---------------------------------'
+c          write(*,*) W(k+nf),e(k+nf)
+c          write(*,*) '---------------------------------'
+c          do n = 1,nf
+c            write(*,*) HH_2(n,k+nf,ib), hb_hh(n+(nf+k-1)*2*nf)
+c          enddo
+c      enddo
+c      read*
+
+c======================================================================c
+c        store eigenvalues and wave functions
+c        particles, u and v
+c======================================================================c
+
+         ka(ib,it) = klp
+         do k = 1,nf
+            klp = klp + 1
+            equ(klp,it) = W(nf+k) !e(nf+k)
+            do n = 1,2*nf
+               fguv_temp(n,klp,it) = HH_2(n,nf+k,ib) !hb_hh(n+(nf+k-1)*2*nf)
+            enddo
+         enddo
+         kd(ib,it) = klp - ka(ib,it)
+
+c---- CHECK, s.p. energies
+c      write(*,*) 'Diagonalized particle contribution:'
+c      do k = 1,nf
+c         write(*,*) ib, it, k, equ(ka(ib,it)+k,it)
+c      enddo !k
+c      read*
+
+c======================================================================c
+c        transformation from u,v --> U,V
+c        U = Z u, V = Z v,  where Z is hh_hh
+c======================================================================c
+
+c--- U matrix
+         do i = 1,nf
+             iik = i + ka(ib,it)
+             do k = 1,nh
+              fguv(k,iik,it) = zero
+              do n = 1,nf
+c                 fguv(k,iik,it) = fguv(k,iik,it)  
+c     &          +  hh_hh(k + (ng+n-1)*nh)*fguv_temp(n,iik,it)
+                 fguv(k,iik,it) = fguv(k,iik,it)  
+     &          +  HH_1(k,ng+n,ib)*fguv_temp(n,iik,it)
+
+              enddo !n
+           enddo !k
+        enddo !i
+c--- V matrix
+       do i = 1,nf
+           iik = i + ka(ib,it)
+           do k = 1,nh
+              fguv(nh+k,iik,it) = zero
+              do n = 1,nf
+c                 fguv(nh+k,iik,it) = fguv(nh+k,iik,it)  
+c     &          +  hh_hh(k + (ng+n-1)*nh)*fguv_temp(nf+n,iik,it)
+                 fguv(nh+k,iik,it) = fguv(nh+k,iik,it)  
+     &          +  HH_1(k,ng+n,ib)*fguv_temp(nf+n,iik,it)
+
+             enddo !n
+           enddo !k 
+        enddo !i
+
+c
+c======================================================================c
+c     BCS-like calculation of chemical potential
+c     Calculate s.p. energy and pair.gap
+c======================================================================c
+      k1 = ka(ib,it) + 1
+      ke = ka(ib,it) + kd(ib,it)
+      do k = k1,ke
+
+        pn = zero
+        pn_v = zero
+c--- calculate v^2
+        do n = 1,nh
+          pn = pn + fguv(nh+n,k,it)**2
+          pn_v = pn_v + fguv_v(nh+n,k,it)**2
+        enddo !i
+
+c--- calculate s.p. energy
+        ela = equ(k,it)*(one-two*pn)
+        ela_v = equ_v(k,it)*(one-two*pn_v)
+        elsp(k) = ela + al
+        elsp_v(k) = ela_v + al
+c--- calculate s.p. pair. gap
+        dksp(k) = sqrt(abs(equ(k,it)**2-ela**2))
+        dksp_v(k) = sqrt(abs(equ_v(k,it)**2-ela_v**2))
+
+      enddo !k 
+
+
+c======================================================================c
+      enddo   ! ib
+c======================================================================c
+c      read*
+c======================================================================c
+c    calculates chemical potential using the Newton-Raphson
+c    method within the BCS-like formulation
+c    Based on HFBTHO v2.00 code
+
+c    takes vapor into account
+
+
+c======================================================================c
+      xinf=-1000.d0
+      xsup=1000.d0
+      esup=one
+      do lit=1,500
+        sn=zero
+        sn_v = zero
+        dez=zero
+        dfz=zero
+        dez_v = zero
+        dfz_v = zero
+        do ib=1,nb
+           k1 = ka(ib,it) + 1
+           ke = ka(ib,it) + kd(ib,it)
+           do i = k1,ke
+          
+           ! N+V:
+           vh=zero
+           dvh=zero
+           fT=zero
+           dfT=zero
+           ! V:
+           vh_v = zero
+           dvh_v = zero
+           fT_v = zero
+           dfT_v = zero
+
+           y=elsp(i)-al
+           y_v = elsp_v(i)-al
+           a=y*y+dksp(i)**2
+           a_v=y_v*y_v+dksp_v(i)**2
+           b=sqrt(a)
+           b_v=sqrt(a_v)
+
+           if(temp.Gt.1.e-6) then
+            fT =half*(one-tanh(half*b/temp))
+            dfT=y/b/temp*fT*(one-fT)
+
+            fT_v =half*(one-tanh(half*b_v/temp))
+            dfT_v=y_v/b_v/temp*fT_v*(one-fT_v)
+           else
+            fT =zero
+            dfT=zero
+
+            fT_v =zero
+            dfT_v=zero
+           endif
+           if(b.Gt.zero)  vh=half*(one-y/b)
+           if(b_v.Gt.zero)  vh_v=half*(one-y_v/b_v)
+
+           if(vh.lt.1.E-14) vh = zero
+           if(vh_v.lt.1.E-14) vh_v = zero
+
+
+           if((vh-one).gt.1.E-14)  vh = one
+           if((vh_v-one).gt.1.E-14)  vh_v = one
+
+           if(b.gt.zero) dvh=half*dksp(i)**2/(a*b)
+           if(b_v.gt.zero) dvh_v=half*dksp_v(i)**2/(a_v*b_v)
+
+           sn=sn+two*vh+two*(one-two*vh)*fT
+           sn_v=sn_v+two*vh_v+two*(one-two*vh_v)*fT_v
+
+           
+
+           dez=dez+two*(one-two*fT)*dvh
+           dfz=dfz+two*(one-two*vh)*dfT
+
+           !CHECK THIS - CHECKED
+           ! this is dN/d ala
+           ! has to be subtr. for vapor
+           dez_v=dez_v+two*(one-two*fT_v)*dvh_v
+           dfz_v=dfz_v+two*(one-two*vh_v)*dfT_v
+
+
+
+
+          enddo !i
+        enddo !ib
+        sn = sn - sn_v
+        dez = dez - dez_v
+        dfz = dfz - dfz_v
+
+c        write(*,*) lit, sn, sn_v
+        ezz=sn-tz(it)
+        absez=abs(ezz)/tz(it)
+        dez=dez+dfz
+c------------------------------------------------------
+c      Correcting bounds
+c------------------------------------------------------
+       if(ezz.Lt.zero) then
+        xinf=Max(xinf,al)
+        einf=ezz
+       else
+        xsup=Min(xsup,al)
+        esup=ezz
+       endif
+       if(lit.Eq.1) then
+        if(absez.Le.0.1d-2) then
+           al=al-ezz
+        else
+           al=al-0.1d-2*sign(one,ezz)
+        endif
+       else
+        al=al-ezz/(dez+1.d-20)                         ! newton method
+       endif
+       if(al.Lt.xinf.Or.al.Gt.xsup) al=half*(xinf+xsup) ! mean upp/low
+       if(absez.Le.fm10) goto 22
+      enddo !lit
+
+
+   22 if (lit.lt.500) then
+       ala(it) = al
+       write(l6,*) '********* Chemical potential converged **********'
+       write(l6,*) 'ala(',it,') = ', al, sn
+       write(l6,*) 'Number of vapor particles: ', sn_v
+      else
+         write(l6,*) 'Lambda iteration not converged!'
+      endif         
+
+c======================================================================c
+c        check transformation
+c======================================================================c 
+         sn = zero
+         sn2 = zero
+         un = zero
+         un2 = zero
+         do ib = 1,nb  
+           nf   = id(ib,1)
+           ng   = id(ib,2)
+           nh = nf + ng
+           do k = 1,nf
+             do n = 1,nf
+               sn = sn + fguv_temp(nf+n,ka(ib,it)+k,it)**2
+               un = un + fguv_temp(n,ka(ib,it)+k,it)**2
+            enddo
+           enddo
+           do k = 1,nf
+             do n = 1,nh
+               sn2 = sn2 + fguv(nh+n,ka(ib,it)+k,it)**2
+               un2 = un2 + fguv(n,ka(ib,it)+k,it)**2
+            enddo
+           enddo
+  
+         enddo !ib
+         write(l6,*) 'Particle number check: ', sn, sn2
+         write(l6,*) 'U norm check:', un, un2
+c======================================================================c
+c        check normalization, UU + VV = 1
+c======================================================================c 
+         do ib = 1,nb  
+           nf   = id(ib,1)
+           ng   = id(ib,2)
+           nh = nf + ng
+           do k = 1,nf
+             kk = ka(ib,it) + k
+             snorm = zero
+             do n1 = 1,nf
+               snorm = snorm + fguv_temp(n1,kk,it)*fguv_temp(n1,kk,it) 
+     & + fguv_temp(nf+n1,kk,it)*fguv_temp(nf+n1,kk,it)
+            enddo !n1
+
+c            write(*,*) kk, snorm
+            if (abs(snorm-1.d0).gt.1e-8) then
+                 write(*,*) 'Wrong NORM 1 !', ib,it,kk, snorm
+                 stop
+            endif
+
+           enddo !k
+         enddo !ib
+          
+        do ib = 1,nb  
+           nf   = id(ib,1)
+           ng   = id(ib,2)
+           nh = nf + ng
+           do k = 1,nf
+             kk = ka(ib,it) + k
+             snorm = zero
+             do n1 = 1,nh
+               snorm = snorm + fguv(n1,kk,it)*fguv(n1,kk,it) 
+     & + fguv(nh+n1,kk,it)*fguv(nh+n1,kk,it)
+            enddo !n1
+
+c            write(*,*) kk, snorm
+            if (abs(snorm-1.d0).gt.1e-8) then
+                 write(*,*) 'Wrong NORM 2 !',ib,it, kk, snorm
+                 stop
+            endif
+
+           enddo !k
+         enddo !ib
+
+
+
+
+
+
+
+      if (.true.) then
+      write(l6,*) ' ****** END DIRHB **********************************'
+      endif
+c
+  101 format(i4,a,i4,3f13.8)
+  113 format(i4,a,a1,3f13.8)
+c
+c      read*
+      return
+C-end-DIRHB
+      end
+
+c======================================================================c
+
+      subroutine dirhb_original(it,lpr)
+
+c======================================================================c
+c
+c     solves the RHB-Equation 
+c     IT    = 1 for neutrons
+c     IT    = 2 for protons
+c
+c     solves for chem. pot. as in the orig. code 
 c----------------------------------------------------------------------c
       implicit real*8 (a-h,o-z)
 c
@@ -7244,6 +8227,223 @@ c
       character tp*1,tis*1,tit*8,tl*1                           ! textex
       character tb*6                                            ! blokap
       character tt*8                                            ! quaosc
+      character nucnam*2                                        ! nucnuc
+c
+      dimension hb(NHBQX),e(NHBX),ez(NHBX)
+c
+      common /blodir/ ka(NBX,4),kd(NBX,4)
+      common /blokap/ nb,kb(NBX),mb(NBX),tb(NBX)
+      common /bloosc/ ia(NBX,2),id(NBX,2)
+      common /deldel/ de(NHHX,NB2X)
+      common /fermi / ala(2),tz(2)
+      common /gamgam/ hh(NHHX,NB2X)
+      common /iterat/ si,siold,epsi,xmix,xmix0,xmax,maxi,ii,inxt,iaut
+      common /mathco/ zero,one,two,half,third,pi
+      common /nucnuc/ amas,npr(3),nucnam
+      common /optopt/ itx,icm,icou,ipc,inl,idd
+      common /quaosc/ nt,nnn(NTX,5),tt(NTX)
+      common /tapes / l6,lin,lou,lwin,lwou,lplo,laka,lvpp
+      common /textex/ tp(2),tis(2),tit(2),tl(0:30)
+      common /waveuv/ fguv(NHBX,KX,4),equ(KX,4)
+      common /temp/ temp
+c---- vapor phase solutions:
+      common /waveuvv/ fguv_v(NHBX,KX,4),equ_v(KX,4)
+
+c
+      data maxl/200/,epsl/1.d-8/,bbb/'-'/,lprl/.false./
+c
+      if (.true.) then
+      write(l6,*) ' ****** BEGIN DIRHB ORIGINAL********************'
+      write(*,*) ' ****** BEGIN DIRHB ORIGINAL********************'
+      endif
+
+      dl    = 100.d0
+      xh    = ala(it) + dl
+      xl    = ala(it) - dl
+      al    = ala(it)  
+c
+c======================================================================c
+      do lit = 1,maxl         ! loop over lambda-iteration
+c======================================================================c
+            snold = sn
+            sn  = zero
+            sn_nv = zero
+            sn_v = zero
+            klp = 0
+            kla = 0
+c======================================================================c
+      do ib = 1,nb            ! loop over differnt blocks
+c======================================================================c
+            mul  = mb(ib)
+            nf   = id(ib,1)
+            ng   = id(ib,2)
+            nh   = nf + ng
+            nhb  = nh + nh
+            m    = ib + (it-1)*NBX
+c
+c------- calculation of the RHB-Matrix:
+            do n2 = 1,nh
+            do n1 = n2,nh
+            hb(   n1+(   n2-1)*nhb) =  hh(n1+(n2-1)*nh,m) 
+            hb(nh+n1+(nh+n2-1)*nhb) = -hh(n1+(n2-1)*nh,m) 
+            hb(nh+n1+(   n2-1)*nhb) =  de(n1+(n2-1)*nh,m)
+            hb(nh+n2+(   n1-1)*nhb) =  de(n2+(n1-1)*nh,m) 
+            enddo
+            hb(   n2+(   n2-1)*nhb) =  hb(n2+(n2-1)*nhb) - al
+            hb(nh+n2+(nh+n2-1)*nhb) = -hb(n2+(n2-1)*nhb)
+            enddo
+c
+c------- Diagonalization:
+            if (lpr) then
+            i0f = ia(ib,1)  
+            do n = 1,nh
+                  tbb(n)    = tt(i0f+n)
+                  tbb(nh+n) = tbb(n)
+            enddo
+            write(l6,'(/i3,a,1x,a)') ib,'. Block ',tb(ib)
+            nx = nhb
+            nx = 5
+            call aprint(2,3,6,nhb,nx,nx,hb,tbb,tbb,'HB')
+            endif
+            call sdiag(nhb,nhb,hb,e,hb,ez,+1)
+c
+c------- store eigenvalues and wave functions
+c------- particles
+            ka(ib,it) = klp
+            do k = 1,nf
+            klp = klp + 1
+            equ(klp,it) = e(nh+k)
+            do n = 1,nhb
+                  fguv(n,klp,it) = hb(n+(nh+k-1)*nhb)
+            enddo
+c------- Ravlic: finite-temperature
+            if (temp.lt.1e-6) then
+                  ftemp = 0
+                  ftemp_v = 0.d0
+            else
+            ftemp = 1.d0/(1.d0+dexp(equ(klp,it)/temp))
+            ftemp_v = 1.d0/(1.d0+dexp(equ_v(klp,it)/temp))
+            endif
+            v2 = zero
+            v2_v = zero
+            do n = 1,nh
+            v2 = v2 + fguv(nh+n,klp,it)**2*(1.d0-ftemp)
+     &            + fguv(n,klp,it)**2*ftemp     
+            v2_v = v2_v + fguv_v(nh+n,klp,it)**2*(1.d0-ftemp_v)
+     &            + fguv_v(n,klp,it)**2*ftemp_v 
+            enddo
+c----------------------------------
+            if (v2.lt.zero) v2 = zero
+            if (v2.gt.one)  v2 = one
+            if (v2_v.lt.zero) v2_v = zero
+            if (v2_v.gt.one)  v2_v = one
+            sn_nv = sn_nv + v2*mul
+            sn_v = sn_v +v2_v*mul
+            enddo
+            kd(ib,it) = klp - ka(ib,it)
+c         write(*,*) 'N (particles) = ', sn
+c
+c------- anti-particles - CHECK!
+            ka(ib,it+2) = kla
+            do k = 1,ng
+            kla = kla + 1
+            equ(kla,it+2) = e(ng-k+1) 
+            do n = 1,nhb
+                  fguv(n,kla,it+2) = hb(n+(ng-k)*nhb)
+            enddo
+            v2 = zero
+c            do n = 1,nh                   ! no-sea approximation
+c               v2 = v2 + fguv(nh+n,kla,it+2)**2
+c            enddo                         ! no-sea approximation
+c            sn = sn + v2*mul
+            enddo
+            kd(ib,it+2) = kla - ka(ib,it+2)
+c         write(*,*) 'N (anti-particles) = ', sn
+c
+c======================================================================c
+      enddo   ! ib
+c======================================================================c
+      sn = sn_nv - sn_v ! important 
+      if (lit.gt.1) dd = (sn - snold)/(al - alold)
+c------- calculation of a new lambda-value
+      alold = al
+      dn    = sn - tz(it)
+      if (dn.lt.zero) then
+            xl = al
+      else
+            xh = al
+      endif
+      if (lit.eq.1) then
+            if(dabs(dn).le.0.1d0) then
+            al = al - dn
+            else
+                  al = al - 0.1d0*sign(one,dn)
+            endif
+      else
+c           secant method
+            if (dd.eq.zero) dd = 1.d-20
+            al    = al - dn/dd
+            if (al.lt.xl.or.al.gt.xh) then
+c              bisection
+            al = half*(xl+xh)
+            bbb = 'B'
+            endif
+      endif
+      if (abs(al-alold).lt.epsl) goto 30
+c
+      if (lprl.or.lit.gt.10) then
+            write(l6,113) lit,'. L-Iteration: ',bbb,alold,dn,al
+            write(6,113)  lit,'. L-Iteration: ',bbb,alold,dn,al
+            bbb = ' '
+      endif
+c           
+c---- end of lambda-loop
+      enddo
+      write(l6,'(a,i4,a)')
+     &     ' Lambda-Iteration interupted after',lit-1,' steps'
+      stop
+   30 if (.true.) then
+        write(l6,101) lit,'. Lambda-Iteration successful:',it,al,dn,sn
+      write(l6,101) lit,'. Lambda-Iteration successful:',it,al,sn_nv,sn_v
+      endif
+      ala(it) = al
+      
+      if (.true.) then
+      write(l6,*) ' ****** END DIRHB **********************************'
+      write(l6,*) ' ****** END DIRHB ORIGINAL**********************'
+      endif
+c
+  101 format(i4,a,i4,3f13.8)
+  113 format(i4,a,a1,3f13.8)
+c
+      return
+C-end-DIRHB
+      end
+c======================================================================c
+
+      subroutine dirhb_full(it,lpr)
+
+c======================================================================c
+c
+c     Full solution that includes anti-particle contribution
+c     runs for a last few iterations
+c
+c     solves the RHB-Equation 
+c     IT    = 1 for neutrons
+c     IT    = 2 for protons
+c 
+c----------------------------------------------------------------------c
+      implicit real*8 (a-h,o-z)
+c
+      include 'dirhb.par'
+c
+      logical lpr,lprl
+c
+      character*1 bbb
+      character*8 tbb(NHBX)
+      character tp*1,tis*1,tit*8,tl*1                           ! textex
+      character tb*6                                            ! blokap
+      character tt*11                                            ! quaosc
       character nucnam*2                                        ! nucnuc
 c
       dimension hb(NHBQX),e(NHBX),ez(NHBX)
@@ -7494,6 +8694,7 @@ c
 C-end-DIRHB
       end
 
+
 C=======================================================================
 
       subroutine nucleus(is,npro,te)
@@ -7571,8 +8772,8 @@ C
 C-----------------------------------------------------------------------
       implicit double precision (a-h,o-z)
 c
-      include 'dirhb.par'
 c      parameter (IGFV = 100)
+      include 'dirhb.par'
 c
       common /gfviv / iv(-IGFV:IGFV)
       common /gfvsq / sq(0:IGFV)
@@ -7657,8 +8858,8 @@ C     BIN(I,J)= = I!/J!/(I-J)!
 c----------------------------------------------------------------------c
       implicit double precision (a-h,o-z)
 c
-      include 'dirhb.par'
 c      parameter (IGFV = 100)
+      include 'dirhb.par'
 c
       common /bin0/ bin(0:IGFV,0:IGFV)
 c
@@ -8235,6 +9436,7 @@ C          0  eigenvalues are not ordered
 C-----------------------------------------------------------------------
       implicit double precision (a-h,o-z)
 C
+      common /iterat/ si,siold,epsi,xmix,xmix0,xmax,maxi,ii,inxt,iaut
       dimension a(nmax,nmax),x(nmax,nmax),e(n),d(n)
 C
       data tol,eps/1.e-32,1.e-10/                           
@@ -8344,7 +9546,7 @@ ccc   test fuer konvergenz
   350 d(i)=d(i)-h                  
       f=f+h                       
 c
-ccc   QR-transformation          
+ccc   QR-transformation
       p=d(j)                    
       c=1.d0                     
       s=0.0                    
@@ -9016,10 +10218,12 @@ c
 
 c
       dimension ekt(3),epart(3),ept(3)
-      dimension xn(3),xs(3),r2(3),qq(3),hh(3)
-      dimension bet2(3),bet4(3)
+      dimension ekt_v(3),epart_v(3),ept_v(3)
+      dimension xn(3),xs(3),qq(3),hh(3)
+c      dimension bet2(3),bet4(3)
       dimension emes(4)
-      dimension del2(2), spk2(2)
+      dimension emes_v(4)
+      dimension spk2(2)
 c
       common /baspar/ hom,hb0,b0
       common /centma/ cmas(3)
@@ -9043,6 +10247,16 @@ c
       common /waveuv/ fguv(NHBX,KX,4),equ(KX,4)
       common /rokaos/ rosh(NHHX,NB2X),aka(MVX,2)
       common /temp/ temp
+c---- this is for MPI code:
+      common /betbet/ bet2(3),bet4(3)
+      common /enerener/ etot, etot_v
+      common /entent/ entropy,entropy_v
+      common /radrad/ r2(3)
+      common /del2del2/ del2(2)
+c---- for V system:
+      common /densv / ro_v(MG,4),dro_v(MG,4)
+      common /rhorhov/ rs_v(MG,2),rv_v(MG,2)
+      common /waveuvv/ fguv_v(NHBX,KX,4),equ_v(KX,4)
 
 c
       ihl(ih,il) = 1+ih + il*(NGH+1)
@@ -9081,10 +10295,10 @@ c------- hexadecupole moment
 c
          i = ihl(ih,il)
          do it = 1,2
-            xn(it) = xn(it) + rv(i,it)
-            xs(it) = xs(it) + rs(i,it)
-            r2(it) = r2(it) + rv(i,it)*rr
-            qq(it) = qq(it) + rv(i,it)*rq
+            xn(it) = xn(it) + (rv(i,it)-rv_v(i,it))
+            xs(it) = xs(it) + (rs(i,it)-rs_v(i,it))
+            r2(it) = r2(it) + (rv(i,it)-rv_v(i,it))*rr
+            qq(it) = qq(it) + (rv(i,it)-rv_v(i,it))*rq
             hh(it) = hh(it) + rv(i,it)*rh
          enddo   ! it
       enddo   ! il
@@ -9116,7 +10330,7 @@ c
       gamg  = zero   
       ecstr = fac0*qq(3)
 c      write(*,*) 'Constrain enegy: ', ecstr
-      
+c      write(*,*) qq(1), qq(2), hh(1), hh(2), alaq      
 c======================================================================c
 c---- single particle energies, kinetic energies and pairing energies
 c======================================================================c
@@ -9125,16 +10339,27 @@ c
       do it=1,2
 c
 c------- kinetic energy 
-         ekt(it) = ekin(it)
+         ekt(it) = ekin(it,1)
+         ekt_v(it) = ekin(it,2)
 c
 c------- particle energy
-         epart(it) = epar(it)
+         epart(it) = epar(it,1)
+         epart_v(it) = epar(it,2)
+
+         
 c
 c------- pairing energy
-         ept(it) = epair(it)
+         ept(it) = epair(it,1)
+         ept_v(it) = epair(it,2)
+
 
 c------- calculate pairing gap
-         del2(it) = -epair(it)/(spk(it)+1.d-10)
+         del2(it) = -epair(it,1)/(spk(it)+1.d-10)
+
+c         write(*,*) 'ekt: ', it, ekt(it)
+c         write(*,*) 'epart: ', it, epart(it)
+c         write(*,*) 'ept: ', it, ept(it)
+
 
       enddo !it
 
@@ -9142,12 +10367,22 @@ c------- calculate pairing gap
       ept(3)   = ept(1) + ept(2)
       epart(3) = epart(1) + epart(2)
       
+      ekt_v(3)   = ekt_v(1) + ekt_v(2)
+      ept_v(3)   = ept_v(1) + ept_v(2)
+      epart_v(3) = epart_v(1) + epart_v(2)
 c======================================================================c
 c---- field energies
 c======================================================================c
 c
       call efield(emes,er,ecou)
       emest = emes(1) + emes(2) + emes(3) + emes(4)
+
+      
+
+      call efield_vapor(emes_v,er_v,ecou_v)
+      emest_v = emes_v(1) + emes_v(2) + emes_v(3) + emes_v(4)
+
+      
 c
 c
 c
@@ -9156,16 +10391,17 @@ c---- center off mass correction ecm = <P**2>/2Am
 c======================================================================c
 c
 c     harmonic oscillator
-      ecm0  = -0.75d0*hom
+c      ecm0  = -0.75d0*hom
+      cmas(3) = -0.75d0*hom
 c
 c     Reinhard
 c     ecm0 = -17.2d0/(amas**(1.d0/5.d0))
 c
-      if (icm.lt.2) then
-         cmas(1) = ecm0*npr(1)/amas
-         cmas(2) = ecm0*npr(2)/amas
-         cmas(3) = cmas(1) + cmas(2)
-      endif
+c      if (icm.lt.2) then
+c         cmas(1) = ecm0*npr(1)/amas
+c         cmas(2) = ecm0*npr(2)/amas
+c         cmas(3) = cmas(1) + cmas(2)
+c      endif
 c
 c======================================================================c
 c---- Total energy
@@ -9173,13 +10409,19 @@ c======================================================================c
       etot0 = ekt(3) + emest + ecou  + ept(3) 
       etot  = etot0 + cmas(3)
       etot1 = epart(3) - ecstr - emest - ecou - er + ept(3)
-      etest = etot1 - etot0
+
+      etot_v = ekt_v(3) + emest_v + ept_v(3)
+      etot1_v = epart_v(3) - emest_v - er_v + ept_v(3)
+
+      
+      etest = etot1 - etot0 + etot1_v - etot_v
       ea    = etot/amas
 c
 c======================================================================c
 c---- Entropy
 c======================================================================c
-      entropy = 0
+      entropy = 0.d0
+      entropy_v = 0.d0
       if (temp .ne. 0.d0) then
       do it =1,2
       do ib = 1,nb            ! loop over the blocks
@@ -9192,19 +10434,28 @@ c======================================================================c
          do k = k1,ke
 c------- Ravlic: finite-temperature
                if (temp.lt.1e-6) then
-                       ftemp = 0
+                  ftemp = 0.d0
+                  ftemp_v = 0.d0
                else
-                       ftemp = 1.d0/(1.d0+dexp(equ(k,it)/temp))
+                  ftemp = 1.d0/(1.d0+dexp(equ(k,it)/temp))
+                  ftemp_v = 1.d0/(1.d0+dexp(equ_v(k,it)/temp))
                endif
                if (ftemp.lt.1e-8.or.(1.d0-ftemp).lt.1e-8) then
-                       entrpy = entropy
+                       entropy = entropy
                else
 
                entropy = entropy + mul*
      &         (ftemp*dlog(ftemp) + (1.d0-ftemp)*dlog(1.d0-ftemp))
                endif
-            
 
+          if (ftemp_v.lt.1e-8.or.(1.d0-ftemp_v).lt.1e-8) then
+                  entropy_v = entropy_v
+          else
+
+          entropy_v = entropy_v + mul*
+     &   (ftemp_v*dlog(ftemp_v) + (1.d0-ftemp_v)*dlog(1.d0-ftemp_v))
+          endif
+            
          enddo !k
 
          ! antiparticles - CHECK !
@@ -9212,7 +10463,8 @@ c------- Ravlic: finite-temperature
 
       enddo !ib
       enddo !it
-      write(*,*) 'Entropy: ', -entropy
+      write(l6,*) 'Entropy(N+V): ', -entropy
+      write(l6,*) 'Entropy(V): ', -entropy_v
       endif
 
 c======================================================================c
@@ -9258,57 +10510,72 @@ c     hexadecupole moment
       write(l6,*) ' '
 c
 c     single-particle energy
-      write(l6,200) ' Particle Energy .....',epart
+      write(l6,200) ' Particle Energy (N+V).....',epart
+      write(l6,200) ' Particle Energy (V).....',epart_v
       write(l6,202) ' Selfconsistency Test.',etest
       write(l6,*) ' '
 c
 c     kinetic energy
-      write(l6,200) ' Kinetic Energy ......',ekt
+      write(l6,200) ' Kinetic Energy (N+V)......',ekt
+      write(l6,200) ' Kinetic Energy (V)......',ekt_v
+
 c 
 c     sigma energy 
-      write(l6,202) ' E-scsc ..............',emes(1)
+      write(l6,202) ' E-scsc (N+V).............',emes(1)
+      write(l6,202) ' E-scsc (V)...............',emes_v(1)
 c 
 c     omega energy  
-      write(l6,202) ' E-scve ..............',emes(2)   
+      write(l6,202) ' E-scve (N+V)..............',emes(2)
+      write(l6,202) ' E-scve (V)..............',emes_v(2)   
 c 
 c     delta-energy       
-      write(l6,202) ' E-vesc...............',emes(3)
+      write(l6,202) ' E-vesc (N+V)...............',emes(3)
+      write(l6,202) ' E-vesc (V)...............',emes_v(3)
 c
 c     rho-energy       
-      write(l6,202) ' E-veve...............',emes(4)
+      write(l6,202) ' E-veve (N+V)...............',emes(4)
+      write(l6,202) ' E-veve (V)...............',emes_v(4)
 c 
 c     rearrangement energy
-      write(l6,202) ' E-rearrangement .....',er       
+      write(l6,202) ' E-rearrangement (N+V).....',er
+      write(l6,202) ' E-rearrangement (V).....',er_v       
 c
 c     Coulomb energy
-      write(l6,202) ' Coulomb direct ......',ecou 
+      write(l6,202) ' Coulomb direct (N+V)......',ecou
+      write(l6,202) ' Coulomb direct (V)......',ecou_v  
 c
 c     Constrained energy
       write(l6,202) ' Constrained energy ..',ecstr
 c
 c     pairing energy
-      write(l6,200) ' Pairing Energy ......',ept
+      write(l6,200) ' Pairing Energy (N+V)......',ept
+      write(l6,200) ' Pairing Energy (V)......',ept_v
 c
 c     total energy without center of mass correction
-      write(l6,202) ' Sum without E-cm ....',etot0
+c      write(l6,202) ' Sum without E-cm ....',etot0
 c
 c
 c     center of mass correction
-      if (icm.lt.2) then
+c      if (icm.lt.2) then
       write(l6,200) ' E-cm  3/4*hom .......',cmas
-      elseif (icm.eq.2.and.ii.eq.0) then
-      write(l6,200) ' E-cm <P**2>/2M ......',cmas
-      endif
+c      elseif (icm.eq.2.and.ii.eq.0) then
+c      write(l6,200) ' E-cm <P**2>/2M ......',cmas
+c      endif
 c
 c     total energy
-      write(l6,202) ' Total Energy ........',etot
+      write(l6,202) ' Total Energy (N+V)........',etot
+      write(l6,202) ' Total Energy (V)........',etot_v
+      write(l6,202) ' Total Energy (sub)........',etot-etot_v
+
 c
 c     energy per particle
-      ea = etot/amas
+      ea = (etot-etot_v)/amas
       write(l6,202) ' E/A .................',ea 
 
 c     entropy
-      write(l6,202) ' Entropy .............',-entropy
+      write(l6,202) ' Entropy (N+V).............',-entropy
+      write(l6,202) ' Entropy (V).............',-entropy_v
+      write(l6,202) ' Entropy (sub).............',-entropy+entropy_v
 
       endif   ! printout
 c
@@ -9326,18 +10593,21 @@ c---------------------------
   102 format(a,35x,f15.6)
   103 format(a,i4,a)
 c
+c      read*
       return
 c-end-EXPECT
       end
       
 c======================================================================c
 c
-      real*8 function ekin(it)
+      real*8 function ekin(it,is)
 c
 c======================================================================c
 c
 c     calculates the kinetic energy
 c
+c     is = 1: N+V system
+c     is = 2: V only
 c----------------------------------------------------------------------c
       implicit real*8 (a-h,o-z)
 c
@@ -9357,6 +10627,8 @@ c
       common /rokaos/ rosh(NHHX,NB2X),aka(MVX,2)
       common /single/ sp(NFGX,NBX)
       common /tapes / l6,lin,lou,lwin,lwou,lplo,laka,lvpp
+c---- for V:
+      common /rokaosv/ rosh_v(NHHX,NB2X),aka_v(MVX,2)
 c
       ek = zero
       do ib = 1,nb
@@ -9383,7 +10655,11 @@ c------- construction of the free Dirac-operator H0
             enddo
             h0(n2+(n2-1)*nh) = - emcc2
          enddo
+         if (is.eq.1) then
          ek = ek + trabt(nh,nh,nh,nh,h0,rosh(1,m))
+         elseif (is.eq.2) then
+         ek = ek + trabt(nh,nh,nh,nh,h0,rosh_v(1,m))
+         endif
       enddo   ! ib
       ekin = ek
 c
@@ -9392,7 +10668,7 @@ c-end-EKIN
       end
 c======================================================================c
 c
-      real*8 function epar(it)
+      real*8 function epar(it,is)
 c
 c======================================================================c
 c
@@ -9417,6 +10693,9 @@ c
       common /physco/ hbc,alphi,r0
       common /rokaos/ rosh(NHHX,NB2X),aka(MVX,2)
       common /tapes / l6,lin,lou,lwin,lwou,lplo,laka,lvpp
+c---- for V system:
+      common /gamgamv/ hh_v(NHHX,NB2X)
+      common /rokaosv/ rosh_v(NHHX,NB2X),aka_v(MVX,2)
 c
       ep = zero
       do ib = 1,nb
@@ -9424,7 +10703,11 @@ c
          ng  = id(ib,2)
          nh  = nf + ng
          m   = ib + (it-1)*NBX
+         if (is.eq.1) then
          ep = ep + trabt(nh,nh,nh,nh,hh(1,m),rosh(1,m))
+         else
+         ep = ep + trabt(nh,nh,nh,nh,hh_v(1,m),rosh_v(1,m))
+         endif
       enddo   ! ib
       epar = ep
 c
@@ -9433,7 +10716,7 @@ c-end-EPAR
       end
 c======================================================================c
 c
-      real*8 function epair(it)
+      real*8 function epair(it,is)
 c
 c======================================================================c
 c
@@ -9453,6 +10736,9 @@ c
       common /rokaos/ rosh(NHHX,NB2X),aka(MVX,2)
       common /tapes / l6,lin,lou,lwin,lwou,lplo,laka,lvpp
       common /tmrpar/ gl(2),ga
+c---- for V system:
+      common /deldelv/ de_v(NHHX,NB2X)
+      common /rokaosv/ rosh_v(NHHX,NB2X),aka_v(MVX,2)
 c
       s  = zero
       il = 0
@@ -9464,7 +10750,11 @@ c
          do n2 =  1,nf
          do n1 = n2,nf
             il = il + 1
+            if (is.eq.1) then
             s  = s + de(n1+(n2-1)*nh,m)*aka(il,it)
+            else
+            s  = s + de_v(n1+(n2-1)*nh,m)*aka_v(il,it)
+            endif
          enddo
          enddo
       enddo   ! ib
@@ -9498,6 +10788,7 @@ c
       common /mathco/ zero,one,two,half,third,pi
       common /optopt/ itx,icm,icou,ipc,inl,idd
       common /rhorho/ rs(MG,2),rv(MG,2)
+      common /rhorhov/ rs_v(MG,2),rv_v(MG,2)
       common /physco/ hbc,alphi,r0
       common /tapes / l6,lin,lou,lwin,lwou,lplo,laka,lvpp
 c
@@ -9547,7 +10838,7 @@ c======================================================================c
       ecou  = zero
       if (icou.ne.0) then
          do i = 1,MG
-            ecou  = ecou + cou(i)*rv(i,2)
+            ecou  = ecou + cou(i)*(rv(i,2)-rv_v(i,2))
          enddo   ! i
       endif   ! icou
       ecou  = half*hbc*ecou
@@ -9864,7 +11155,7 @@ c
          d_ts   =    zero
 c
          ipc    =  0
-	 icm    =  2
+	 icm    =  0
 	 idd    =  2
 c=============================================================== 
        elseif (parname.eq.'DD-PC1') then
@@ -9920,6 +11211,272 @@ c        gg = 1
          icm    = 0
          idd    = 2
          ipc    = 1
+
+c=============================================================== 
+      elseif (parname.eq.'DD-PCX') then
+c---------------------------------------------------------------
+c        G(x) = a + (b + c*x) * exp(-d*x)
+c---------------------------------------------------------------
+
+      dsat   =  0.152d0           ! fm^-3
+      amu    =  939.d0            ! MeV
+c
+c        scalar-scalar
+      a_s    = -10.979243836d0        ! fm^-2
+      b_s    = -9.038250910d0         ! fm^-2
+      c_s    = -5.313008820d0         ! fm^-2
+      d_s    =  +1.379087070d0            
+c
+c        scalar-vector
+      a_v    =  +6.430144908d0       ! fm^-2
+      b_v    =  +8.870626019d0       ! fm^-2
+      c_v    =   0.00000d0           ! fm^-2
+      d_v    =  +0.655310525d0            
+c
+c        vector-scalar
+      a_ts   =    zero
+      b_ts   =    zero
+      c_ts   =    zero
+      d_ts   =    zero
+c
+c        vector-vector
+      a_tv   =   0.0000d0            ! fm^-2
+      b_tv   =   2.963206854d0       ! fm^-2
+      c_tv   =   0.0000d0            ! fm^-2  
+      d_tv   =   1.309801417d0            
+c
+c----- derivative terms              ! MeV^-4
+      ddsig  =  -0.878850922d0
+      ddome  =   zero
+      dddel  =   zero
+      ddrho  =   zero
+c
+c----------------------------------------------------
+c
+c        gg = 1
+      ggsig = one
+      ggome = one
+      ggdel = one
+      ggrho = one
+      amsig = zero
+      amome = zero
+      amdel = zero
+      amrho = zero
+
+      icm    = 0
+      idd    = 2
+      ipc    = 1
+
+c=============================================================== 
+      elseif (parname.eq.'DD-PCJ29') then
+c---------------------------------------------------------------
+        dsat   =  0.152d0              ! fm^-3
+        amu    =  939.d0            ! MeV
+
+c        scalar-isoscalar
+        a_s    = -10.41833463098d0    ! fm^-2
+        b_s    =  -9.16361295646d0           ! fm^-2
+        c_s    =  -4.96806417153d0           ! fm^-2
+        d_s    =  1.34837483410d0
+
+c        vector-isoscalar
+        a_v    =  6.59105120288d0           ! fm^-2
+        b_v    =  8.36619219952d0           ! fm^-2
+        c_v    =   0.00000d0           ! fm^-2
+        d_v    =  0.73753172191d0
+
+c        scalar-isovector
+        a_ts   =   zero
+        b_ts   =   zero
+        c_ts   =   zero
+        d_ts   =   zero
+
+c        vector-isovector
+        a_tv   =   0.0000d0            ! fm^-2
+        b_tv   =   4.37043388689d0           ! fm^-2
+        c_tv   =   0.0000d0            ! fm^-2
+        d_tv   =   1.84556163163d0
+
+c----- derivative terms                 ! MeV^-4
+        ddsig  =   -0.82398093845d0
+        ddome  =   zero
+        dddel  =   zero
+        ddrho  =   zero
+
+c
+c----------------------------------------------------
+c
+c        gg = 1
+        ggsig = one
+        ggome = one
+        ggdel = one
+        ggrho = one
+        amsig = zero
+        amome = zero
+        amdel = zero
+        amrho = zero
+
+        icm    = 0
+        idd    = 2
+        ipc    = 1
+
+c=============================================================== 
+      elseif (parname.eq.'DD-PCJ36') then
+c---------------------------------------------------------------
+        dsat   =  0.152d0              ! fm^-3
+        amu    =  939.d0            ! MeV
+      
+c        scalar-isoscalar
+        a_s    = -10.38778149735d0           ! fm^-2
+        b_s    =  -9.21899012776d0           ! fm^-2
+        c_s    =  -5.01904895726d0           ! fm^-2
+        d_s    =  1.35217370837d0
+c
+c        vector-isoscalar
+        a_v    =  6.58557662959d0           ! fm^-2
+        b_v    =  8.35926728696d0           ! fm^-2
+        c_v    =  0.00000d0           ! fm^-2
+        d_v    =  0.74085714045d0
+c
+c        scalar-isovectorc        
+        a_ts   =   zero
+        b_ts   =   zero
+        c_ts   =   zero
+        d_ts   =   zero
+c
+c        vector-isovector
+        a_tv   =   0.0000d0            ! fm^-2
+        b_tv   =   1.47460905176d0           ! fm^-2c       
+        c_tv   =   0.0000d0            ! fm^-2
+        d_tv   =   0.25207271293d0
+
+c
+c----- derivative terms                 ! MeV^-4
+        ddsig  =  -0.85985655273d0
+        ddome  =   zero
+        dddel  =   zero
+        ddrho  =   zero
+c
+c----------------------------------------------------
+c
+c        gg = 1
+            ggsig = one
+            ggome = one
+            ggdel = one
+            ggrho = one
+            amsig = zero
+            amome = zero
+            amdel = zero
+            amrho = zero
+
+            icm    = 0
+            idd    = 2
+            ipc    = 1
+c=============================================================== 
+      elseif (parname.eq.'DD-PCJ32') then
+c---------------------------------------------------------------
+        dsat   =  0.152d0              ! fm^-3
+        amu    =  939.d0            ! MeV
+      
+c        scalar-isoscalar
+        a_s    = -10.38948880d0           ! fm^-2
+        b_s    =  -9.19771590734d0           ! fm^-2
+        c_s    =  -5.03063840861d0           ! fm^-2
+        d_s    =  1.35232947603d0
+c
+c        vector-isoscalar
+        a_v    =  6.58442579985d0           ! fm^-2
+        b_v    =  8.35894966985d0           ! fm^-2
+        c_v    =   0.00000d0           ! fm^-2
+        d_v    =  0.73988531805d0
+c
+c        scalar-isovector
+        a_ts   =   zero
+        b_ts   =   zero
+        c_ts   =   zero
+        d_ts   =   zero
+c
+c        vector-isovector
+        a_tv   =   0.0000d0            ! fm^-2
+        b_tv   =   2.58153374140d0           ! fm^-2
+        c_tv   =   0.0000d0            ! fm^-2
+        d_tv   =   1.06707138530d0
+c
+c----- derivative terms                 ! MeV^-4
+        ddsig  =  -0.84188490626d0
+        ddome  =   zero
+        dddel  =   zero
+        ddrho  =   zero
+c
+c----------------------------------------------------
+c
+c        gg = 1
+      ggsig = one
+      ggome = one
+      ggdel = one
+      ggrho = one
+      amsig = zero
+      amome = zero
+      amdel = zero
+      amrho = zero
+
+      icm    = 0
+      idd    = 2
+      ipc    = 1
+
+c=============================================================== 
+      elseif (parname.eq.'DD-PCJ34') then
+c---------------------------------------------------------------
+        dsat   =  0.152d0              ! fm^-3
+        amu    =  939.d0            ! MeV
+      
+c       scalar-isoscalar
+        a_s    = -10.38695674090d0           ! fm^-2
+        b_s    =  -9.20807483895d0           ! fm^-2
+        c_s    =  -5.02322052093d0           ! fm^-2
+        d_s    =  1.35226222987d0
+
+c        vector-isoscalar
+        a_v    =  6.58740466219d0           ! fm^-2
+        b_v    =  8.35022522683d0           ! fm^-2
+        c_v    =   0.00000d0           ! fm^-2
+        d_v    =  0.74027481274d0
+
+c        scalar-isovector
+        a_ts   =   zero
+        b_ts   =   zero
+        c_ts   =   zero
+        d_ts   =   zero
+
+c        vector-isovector
+        a_tv   =   0.0000d0            ! fm^-2
+        b_tv   =   1.91316165045d0           ! fm^-2
+        c_tv   =   0.0000d0            ! fm^-2
+        d_tv   =   0.62956942869d0
+
+c----- derivative terms                 ! MeV^-4
+        ddsig  =  -0.84972155676d0
+        ddome  =   zero
+        dddel  =   zero
+        ddrho  =   zero
+
+c
+c----------------------------------------------------
+c
+c        gg = 1
+      ggsig = one
+      ggome = one
+      ggdel = one
+      ggrho = one
+      amsig = zero
+      amome = zero
+      amdel = zero
+      amrho = zero
+
+      icm    = 0
+      idd    = 2
+      ipc    = 1
+      
       else
 c=====================================================================c
           stop 'This type of force is not defined'
@@ -9946,10 +11503,35 @@ c=====================================================================c
 c---- Separable pairing force
 c=====================================================================c
 c
-      gl(1) = -728.d0
-      gl(2) = -728.d0
-c      ga    = 0.644204936     ! fm
-      ga    = 0.415d0
+      if (parname.eq.'DD-PC1'.or.parname.eq.'DD-ME2') then
+            gl(1) = -728.d0
+            gl(2) = -728.d0
+            ga    = 0.415d0
+      elseif (parname.eq.'DD-PCX') then
+            gl(1) = -800.663126037d0
+            gl(2) = -773.776776597d0
+            ga    = 0.415d0
+      elseif (parname.eq.'DD-PCJ29') then
+            gl(1) = -829.99300d0
+            gl(2) = -770.15586d0
+            ga    = 0.415d0
+      elseif (parname.eq.'DD-PCJ36') then
+            gl(1) = -818.82887d0
+            gl(2) = -773.77497d0
+            ga    = 0.415d0
+      elseif (parname.eq.'DD-PCJ32') then
+            gl(1) = -825.97419d0
+            gl(2) = -769.75826d0
+            ga    = 0.415d0
+      elseif (parname.eq.'DD-PCJ34') then
+            gl(1) = -820.80162d0
+            gl(2) = -771.63793d0
+            ga    = 0.415d0
+      else
+            stop 'This type of force is not defined'
+      endif
+
+
 c
 c---- printout of force:
       if (lpr) call pripar
@@ -10059,6 +11641,7 @@ c
       emcc2 = 2*amu*hbc
       f = hbc/b0
 c
+c      write(*,*) 'Mean-field matrix elements:'
       do ib = 1,nb
          nf  = id(ib,1)
          ng  = id(ib,2)
@@ -10084,7 +11667,16 @@ c     symmetrize HH
             hh(n2+(n1-1)*nh,m) = hh(n1+(n2-1)*nh,m)
          enddo
          enddo
+
+c--- print matrix - Ravlic
+c      do n1 = 1,nh
+c        do n2 = 1,nh
+c           write(*,*) m,n1, n2, hh(n1+(n2-1)*nh,m)
+c        enddo
+c      enddo
+   
       enddo  !ib
+
 
       return
 C-end-GAMMA
@@ -10314,7 +11906,7 @@ c        printout
             write(l6,100) ' H     xh',n,(qh(n,ih),ih=1,ix)
             write(l6,100) ' dH/dx xh',n,(qh1(n,ih),ih=1,ix)
 c           write(l6,100) ' H  cb*xh',n,(qhb(n,ih)*sqrt(wh(ih)),ih=1,ix)
-            write(l6,100) ' H   b   ',n,(qhb(n,ih),ih=1,ix)
+c            write(l6,100) ' H   b   ',n,(qhb(n,ih),ih=1,ix)
   100       format(a,i3,3f15.8)
             write(l6,*) ' '
          enddo
@@ -10530,6 +12122,7 @@ c     main iteration for the spherical Dirac program
 c
 c----------------------------------------------------------------------c
       implicit real*8 (a-h,o-z)
+      include 'mpif.h'
 c
       logical lpr,lprx
       character*2 nucnam
@@ -10543,6 +12136,7 @@ c
       common /optopt/ itx,icm,icou,ipc,inl,idd
       common /pair  / del(2),spk(2),spk0(2)
       common /tapes / l6,lin,lou,lwin,lwou,lplo,laka,lvpp
+      common /con_b2/ betac,q0c,cquad,c0,alaq,calcq0,icstr
 c
 c
       data spk_min/0.1/
@@ -10556,21 +12150,31 @@ c      CALL zeit(1,'ITER_____',6,.false.)
 c
       write(l6,*) '****** BEGIN ITER **********************************'
       
+      call MPI_COMM_RANK (MPI_COMM_WORLD, i_my_id, ierr)
+
       ii=0
       do it=1,2
          call gamma(it)
+         call gamma_vapor(it)
       enddo
       call broyden(.false.)
 c
       do ite = 1,maxi
          ii = ite
-         write(l6,102) ii,'.It. si = ',si,'  E/A = ',ea,
+         write(l6,102) i_my_id, ii,'.It. si = ',si,'  E/A = ',ea,
      &                    ' R = ',rms,' b = ',betg,'  mix =',xmix  
-         write( 6,102) ii,'.It. si = ',si,'  E/A = ',ea,
+         write( 6,102) i_my_id, ii,'.It. si = ',si,'  E/A = ',ea,
      &                    ' R = ',rms,' b = ',betg,'  mix =',xmix  
 c
 c
 c
+      if (ite.eq.20) then
+            write(*,*) '-----------------------'
+            write(*,*) 'Iteration number > 20'
+            write(*,*) 'Unconstrained variation'
+            write(*,*) '-----------------------'
+            icstr = 0
+      endif
 c------- loop over neutrons and protons
          do it = 1,2
 c
@@ -10578,39 +12182,73 @@ c---------- calculation of the mean field Gamma
 c           call gamma(it)
 c
 c---------- diagonalization of the Dirac-Bogolibov equation 
-            call dirhb(it,.false.)
-c
+c---- Ravlic
+c            if (ite.lt.25) then
+               call dirhb_vapor(it,.false.)
+               call dirhb(it,.false.)
+c            else
+c               write(*,*) 'Full diagonalization !'
+c               call dirhb_full(it,.false.)
+c            endif
+c---- Ravlic
 c---------- calculation of densities in oscillator basis
             call denssh(it,.false.)
+            call denssh_vapor(it,.false.)
 c
          enddo   ! it
 c
 c------- calculation of new densities in r-space
          call densit(.false.)
+         call densit_vapor(.false.)
+c         write(*,*) ii, ' Calculated densities'
+
+c------- write densities to a file:
+c         call plot(.true.) ! REMEMBER TO COMMENT
+         
 c
-c------- new coupling constants
+c------- new coupling constants N+V:
          call gdd(.false.)
+
+c------- new coupling constants V:
+         call gdd_vapor(.false.)
 c
-c------- calculation of new fields
+c------- calculation of new fields N+V:
          call field(.false.)
-c
+
+c         write(*,*) 'Calculated fields (N+V)'
+
+c------- calculation of new fields V:
+         call field_vapor(.false.)
+
+c         write(*,*) 'Calculated fields (V)'
+
 c------- calculation of the Coulomb potential
          call coulom(.false.)
+
+c         write(*,*) 'Calculated coulomb'
 c
 c------- calculation of expectation values
          call expect(.true.)
+
+c         write(*,*) 'Calculated expected values'
 c
 c------- potentials in r-space
          call cstrpot(.false.)
          call poten(.false.)
+         call poten_vapor(.false.)
 c
 c------- pairing field
          do it = 1,2
+c            write(*,*) it, ' Calculating mean-field'
             call gamma(it)
+            call gamma_vapor(it)
+c            write(*,*) ' Calculating pairing filed !'
             call delta(it,.false.)
+            call delta_vapor(it,.false.)
          enddo
-         
+c         write(*,*) 'Broyden mixing ...' 
          call broyden(.false.)
+c         stop
 c        
 c------- check for convergence
          if (ii.gt.2) then
@@ -10635,7 +12273,7 @@ c      CALL zeit(2,'ITER_____',6,.false.)
 c
   100 format(1x,68(1h*),/,2x,a2,i4,a27,i4,a14,f17.10,/,1x,68(1h*))
   101 format(1x,a2,i4,a27,i4,a14,f17.10)
-  102 format(i3,a,f10.6,3(a,f7.3),a,f5.2) 
+  102 format(2i3,a,f10.6,3(a,f7.3),a,f5.2) 
 c
       return
 c-end-ITER
@@ -10648,13 +12286,52 @@ c
 c======================================================================c
 c     Relativistic Hartree-Bogoliubov theory in a axially symmetric basis
 c     Main part of the code
+c
+c     parallel version for determining minima on PES
+c
 c----------------------------------------------------------------------c
 c
 c-------------------------------------
       implicit real*8 (a-h,o-z)
-      common /mathco/ zero,one,two,half,third,pi
 
 c-------------------------------------
+      include 'mpif.h'
+c-------------------------------------
+
+      common /mathco/ zero,one,two,half,third,pi
+      common /betbet/ bet2(3),bet4(3)
+      common /con_b2/ betac,q0c,cquad,c0,alaq,calcq0,icstr
+      common /enerener/ etot, etot_v
+      common /entent/ entropy,entropy_v
+      common /temp/ temp
+      common /radrad/ r2(3)
+      common /del2del2/ del2(2)
+      common /fermi / ala(2),tz(2)
+      common /liflif/ time_life, part_dens
+      common /iterat/ si,siold,epsi,xmix,xmix0,xmax,maxi,ii,inxt,iaut
+      common /nucnuc/ amas,nneu,npro,nmas,nucnam
+      common /baspar/ hom,hb0,b0
+c---- array to store calculated values
+c---- 11 is nproc and 16 is maximum number of stored data
+      dimension results_array(15*11)
+      dimension tmp_array(15)
+      logical drip_line
+      common /dripline/ sn(500),sp(500)
+      common /direc/ i_direc
+
+c-------------------------------------
+c-------------------------------------
+c    start parallel region here !
+c-------------------------------------
+      call MPI_INIT ( ierr )
+c-------------------------------------
+      call MPI_COMM_RANK (MPI_COMM_WORLD, i_my_id, ierr)
+      call MPI_COMM_SIZE (MPI_COMM_WORLD, i_num_procs, ierr)
+
+      write(*,*) 'Starting process, ', i_my_id
+
+      open(99,file='results.out',status='unknown')
+c      open(55,file='results_drip_line.out',status = 'unknown')
 c
 c
 c---- sets data
@@ -10664,6 +12341,7 @@ c
 c---- reads in data     
       call reader(.true.)
 c
+
 c---- force-parameters
       call forces(.true.)
 c
@@ -10673,55 +12351,135 @@ c---- Gauss-Hermite mesh points
 c
 c---- oscillator basis for single particle states
       call base(.false.)
-c
+
+c-----------------------------------------
+c---- start drip line loop
+c-----------------------------------------
+c      drip_line=.true.
+c      icount = 0
+c---- start loop over neutron/proton number
+c      do while(drip_line)
+      write(*,*) '**********************************'
+      write(*,*) 'Running calculation for:', npro, nneu
+      write(*,*) '**********************************'
 c---- preparations
       call prep(.false.)
 c
 c---- wavefunctions at Gauss-Meshpoints
-      call gaupol(.true.)
+      call gaupol(.false.)
 c
 c---- initialization of the potentials
       call inout(1,.false.) 
 c
 c---- initialization of the pairing field
       call dinout(1,.false.)
+c---- start N+V:
       call start(.false.)
+c---- initialization of vapor potentials:
+      call start_vapor(.false.)
 c
 c---- single-particle matix elements
       call singf(.false.)
 c
 c---- preparation of pairing matrix elements 
       call singd(.false.)
+c      stop
 c
 c---- coulomb and meson propagators
       call greecou(.false.)
       call greemes(.false.)
 c
 c---- iteration
-      call iter(.true.)   
-c
-c---- transformation to the canonical basis
-      call canon(.false.)
-c
-c---- center of mass correction
-      call centmas(.false.)
-c
-c---- results
-      call resu(.false.)
-      call plot(.false.)
-c
-c---- punching of potentials to tape  dis.wel
-      call inout(2,.false.)
-      call dinout(2,.false.)
+      call iter(.true.)
+
+c----- for neutron lifetime --------------
+      if (temp.gt.0.1d0) then
+        call canon_vapor(.true.)
+        call emit_neutron()
+      endif
+c-----------------------------------------
 
       call cpu_time(ends)
 
-      write(*,*) 'Elapsed time: ', (ends-starts)/60.d0, ' min'   
+c      write(*,*) 'Elapsed time: ', (ends-starts)/60.d0, ' min'  
+      
+c-------------------------------------
+c    collect data
+c------------------------------------- 
 
+      tmp_array(1) = tz(1)
+      tmp_array(2) = tz(2)
+      tmp_array(3) = temp
+      tmp_array(4) = etot-etot_v
+      tmp_array(5) = -entropy+entropy_v
+      tmp_array(6) = bet2(3)
+      tmp_array(7) = r2(1)
+      tmp_array(8) = r2(2)
+      tmp_array(9) = ala(1)
+      tmp_array(10) = ala(2)
+      tmp_array(11) = del2(1)
+      tmp_array(12) = del2(2)
+      tmp_array(13) = ii
+      tmp_array(14) = part_dens
+      tmp_array(15) = time_life
+c----- collect tmp_array    
+      call MPI_GATHER(tmp_array,15,MPI_REAL8,
+     $   results_array,15,MPI_REAL8,0,
+     $   MPI_COMM_WORLD, ierr )
+
+c---- write array to results.out
+      if (i_my_id.eq.0) then
+      do i = 1,11
+      write(99,'(15E16.8)') 
+     $ (results_array(j),j=(i-1)*15+1,i*15)
+c      write(*,'(15E16.8)') 
+c     $ (results_array(j),j=(i-1)*15+1,i*15)  
+      enddo !i
+      endif
+
+c----- determine minimum F
+      i_min = 0
+      if (i_my_id.eq.0) then
+            F_min = 5000.d0
+            i_min = 1
+            do i = 1,11
+            if (results_array((i-1)*15+13).lt.maxi.and.
+     $       abs(results_array((i-1)*15+6)).lt.0.8) then
+             F_tmp = results_array((i-1)*15+4)
+     $        -temp*results_array((i-1)*15+5)
+             if ((F_tmp.lt.F_min)
+     $ .and.(results_array((i-1)*15+13).lt.300)) then
+                  F_min = F_tmp
+                  i_min = i
+             endif
+            endif ! ii condition
+            enddo
+       write(*,*) i_min, F_min,
+     $ results_array((i_min-1)*15+6),
+     $ results_array((i_min-1)*15+4),
+     $ results_array((i_min-1)*15+5)
+      endif
+
+c----- broadcast i_min
+      call MPI_BCAST(i_min,1,MPI_INTEGER,
+     $   0, MPI_COMM_WORLD, ierr )
+
+      write(*,*) 'Minmum is found on node, ', i_min, i_my_id, bet2(3)
+c----- plot the density for minimum configuation
+      if (i_my_id.eq.(i_min-1)) then
+            write(*,*) 'Plotting the density !'
+            call plot(.true.)
+      endif
+
+      close(99)
 c---- RAVLIC, test modules for linear response
 
 c---- 
-c      call linres()
+c-------------------------------------
+c    end parallel region here !
+c-------------------------------------      
+      call MPI_FINALIZE ( ierr )
+c-------------------------------------
 
       stop ' FINAL STOP OF DIRHBZ'
 c-end-DIZ
@@ -10740,7 +12498,12 @@ c---------------------------------------------------------------------c
       include 'dirhb.par'
       logical lpr
 c
-      dimension pn(nox1),zp(0:NGL,0:NGH,3)
+      dimension pn(nox1),zp_n(0:NGL,0:NGH,3),zp_p(0:NGL,0:NGH,3)
+      dimension pn_v(nox1),zp_v_n(0:NGL,0:NGH,3),zp_v_p(0:NGL,0:NGH,3)
+
+
+      dimension vec_dens(0:ngh,0:ngl,2)
+      dimension vec_dens_v(0:ngh,0:ngl,2)
 c
       common /baspar/ hom,hb0,b0
       common /defbas/ beta0,q,bp,bz
@@ -10753,36 +12516,67 @@ c
       common /physco/ hbc,alphi,r0
       common /potpot/ vps(0:NGH,0:NGL,2),vms(0:NGH,0:NGL,2)
       common /tapes / l6,lin,lou,lwin,lwou,lplo,laka,lvpp
-c
+c--- vapor:
+      common /densv/ ro_v(0:ngh,0:ngl,4),dro_v(0:ngh,0:ngl,4)        
 c
       if (lpr)
      &write(l6,*) ' ****** BEGIN PLOT ********************************'
 c
 c     number of points for the plot
-      mxplz  = 160
-      mxplr  = 80 
+      mxplz  = 300
+      mxplr  = 300 
 c     plot step in (fm)
       stplz = 0.1
       stplr = 0.1
       am = amu*hbc
 
+c---- create vector density array:
+      do ih = 0,NGH
+        do il = 0,NGL
+      vec_dens(ih,il,1) = half*(ro(ih,il,2)-ro(ih,il,4))
+      vec_dens(ih,il,2) = half*(ro(ih,il,2)+ro(ih,il,4))
+
+      vec_dens_v(ih,il,1) = half*(ro_v(ih,il,2)-ro_v(ih,il,4))
+      vec_dens_v(ih,il,2) = half*(ro_v(ih,il,2)+ro_v(ih,il,4))
+
+        enddo
+      enddo
+
 c---- plot for densities:
 
       open(lplo,file='dirhb.plo',status='unknown')
-      call splin2(rb,zb,NGL,NGH,ro(0,0,2),zp)
+      open(55,file='dirhb_vapor.plo',status='unknown')
+
+      call splin2(rb,zb,NGL,NGH,vec_dens(0,0,1),zp_n)
+      call splin2(rb,zb,NGL,NGH,vec_dens(0,0,2),zp_p)
+
+      call splin2(rb,zb,NGL,NGH,vec_dens_v(0,0,1),zp_v_n)
+      call splin2(rb,zb,NGL,NGH,vec_dens_v(0,0,2),zp_v_p)
+
       r=0.d0
       do ir=0,mxplr
-         z=-8.d0
+         z=0.d0
          do iz=0,mxplz
-            call splint2(r,abs(z),NGL,NGH,rb,zb,ro(0,0,2),zp,rv)
-            write(lplo,100) r,z,rv
+c            call splint2(r,abs(r),NGL,NGH,rb,zb,ro(0,0,2),zp,rv)
+
+            call splint2(r,z,NGL,NGH,rb,zb,vec_dens(0,0,1),zp_n,rv_n)
+            call splint2(r,z,NGL,NGH,rb,zb,vec_dens(0,0,2),zp_p,rv_p)
+
+      call splint2(r,z,NGL,NGH,rb,zb,vec_dens_v(0,0,1),zp_v_n,rv_v_n)
+      call splint2(r,z,NGL,NGH,rb,zb,vec_dens_v(0,0,2),zp_v_p,rv_v_p)
+
+            write(lplo,100) r,z,rv_n, rv_p
+            write(55,100) r,z, rv_v_n, rv_v_p
             z=z+stplz
          enddo
         r=r+stplr
        enddo
-  100       format(2f10.3,f15.6) 
-103          format(f10.3,2f15.6)
+  100       format(2f10.3,2e15.7) 
+  103       format(f10.3,2f15.6)
+
+
       close(lplo)
+      close(55)
 c
       if (lpr)
      &write(l6,*) ' ****** END PLOT **********************************'
@@ -10822,6 +12616,8 @@ c
       common /physco/ hbc,alphi,r0
       common /potpot/ vps(MG,2),vms(MG,2)
       common /tapes / l6,lin,lou,lwin,lwou,lplo,laka,lvpp
+      common /gaussh/ xh(0:NGH),wh(0:NGH),zb(0:NGH)
+      common /gaussl/ xl(0:NGL),wl(0:NGL),sxl(0:NGL),rb(0:NGL)
 
       if (lpr) then
       write(l6,*) ' ****** BEGIN POTEN ********************************'
@@ -10881,6 +12677,28 @@ c
 
       enddo   ! i
 
+c---- write potentials to a file, assume sph. symmetry
+      ! open(88, file = 'vps.out', status = 'unknown')
+      ! open(89, file = 'vms.out', status = 'unknown')
+
+      ! do il = 0, NGL
+      !   do ih = 0,NGH
+
+      !       ihl = 1+ ih +il*(NGH+1)
+      !       r = rb(il)
+      !       z = zb(ih)
+
+      !       !if (z.eq.r) then
+      !             write(88,'(4E15.7)') r, z, vps(ihl,1), vps(ihl,2)
+      !             write(89,'(4E15.7)') r, z, vms(ihl,1), vms(ihl,2)
+      !       !endif
+
+      !   enddo
+      ! enddo
+
+      ! close(88)
+      ! close(89)
+
       if (lpr) then
       write(l6,*) ' ****** END POTEN **********************************'
       endif
@@ -10904,7 +12722,7 @@ c----------------------------------------------------------------------c
 c
       include 'dirhb.par'
 c
-      character tt*8                                            ! quaosc
+      character tt*11                                            ! quaosc
 c
       dimension aa(nh,nh),v(0:NGH,0:NGL)
 c
@@ -10979,19 +12797,30 @@ c
       common /physco/ hbc,alphi,r0
       common /tapes / l6,lin,lou,lwin,lwou,lplo,laka,lvpp
       common /textex/ tp(2),tis(2),tit(2),tl(0:30)
+      common /fermi / ala(2),tz(2)
 c
 c
       if (lpr) then
       endif
       write(l6,*) '****** BEGIN PREP **********************************'
 c
-c
+c---- determine parameters for new nucleus
+c---- drip-line loop
+c      amas = nneu + npro
+c      nmas = nneu + npro
+c      call nucleus(1,npro,nucnam)
+c      write(l6,'(a,a,i4,i6,i4)') ' Nucleus: ',nucnam,nmas,nneu,npro
+c      tz(1) = nneu
+c      tz(2) = npro
 c---- basis parameters
       hb0 = hbc/(two*amu)
       hom = 41.0*amas**(-third)    
       if (icm.eq.1) hb0 = hb0*(one - one/amas)
+
+      if (b0.lt.zero) then
       b0 = sqrt(two*hb0/hom)
-      
+      endif 
+     
       bp    = q**(-1.d0/6.d0)
       bz    = q**(+1.d0/3.d0)
       bpp   = (b0*bp)**2
@@ -11062,6 +12891,7 @@ c======================================================================c
       implicit real*8 (a-h,o-z)
 c
       include 'dirhb.par'
+      include 'mpif.h'
 c 
       logical lpr
       character parname*10                                      ! partyp
@@ -11089,9 +12919,21 @@ c
       common /tapes / l6,lin,lou,lwin,lwou,lplo,laka,lvpp
       common /temp/ temp
       common /matel/ imatel
+
+      character*3 char_l6
 c
+
+      call MPI_COMM_RANK (MPI_COMM_WORLD, i_my_id, ierr)
+      call MPI_COMM_SIZE (MPI_COMM_WORLD, i_num_procs, ierr)
+
+      write(*,*) 'Process, ', i_my_id
+      
       open(lin,file='dirhb.dat',status='old')
-      open(l6,file='dirhb.out',status='unknown')
+
+      l6 = 500+i_my_id
+      write(char_l6,'(i3)') l6
+
+      open(l6,file='dirhb_'//char_l6//'.out',status='unknown')
 c
       call date_and_time( date, time, zone, values )
       
@@ -11103,20 +12945,35 @@ c---- deformation-parameters of the basis
       w = 3*sqrt(5/(16*pi))
       beta0 = q
       q     = exp(w*beta0)
+
+c---- oscillator length
+      read(lin,'(10x,f10.4) ') b0
+      write(*,*) 'Read b0: ', b0
+
 c
 c---- initial deformation-parameters
       read(lin,'(10x,f10.4) ') betai
+
 c
 c---- Initialization of wavefunctions:
       read(lin,'(10x,2i5)') inin,inink
 c
 c---- Nucleus under consideration
       read(lin,'(a2,i4)') nucnam,nmas
+c---- determine stability valley N
+c      call stability
+
       call nucleus(2,npro,nucnam)
       nneu = nmas - npro
       amas = nmas 
       tz(1) = nneu
       tz(2) = npro
+
+c      amas = nneu + npro
+c      nmas = nneu + npro
+
+c      call nucleus(1,npro,nucnam)
+c      write(l6,'(a,a,i4,i6,i4)') ' Nucleus: ',nucnam,nmas,nneu,npro
 c
 c------------------------------------------------------------
 c---- pairing  
@@ -11136,7 +12993,27 @@ c---- constraining fields
 c------------------------------------------------------------
       read(lin,*)
       read(lin,'(10x,i5)') icstr
-      read(lin,'(10x,f10.4) ') betac
+c      read(lin,'(10x,f10.4) ') betac
+      
+
+      beta_initial = -0.6
+      beta_final = +0.7
+      step = (beta_final-beta_initial)/i_num_procs
+
+      betac = beta_initial + step*i_my_id
+c--- set initial WS deformation to const. deformation
+      betai = betac
+      w = 3*sqrt(5/(16*pi))
+      beta0 = betac
+      q     = exp(w*beta0)
+
+
+      write(*,*) 'Betac on process, ', betac, i_my_id
+
+c--------------------------------------------------------
+c betac is determined for each processor separately
+c--------------------------------------------------------
+      
       read(lin,'(10x,f10.4) ') cquad
       read(lin,'(10x,f10.4) ') temp
       read(lin,'(10x,i5)') imatel
@@ -11208,9 +13085,419 @@ c------------------------------------------------------------
       write(l6,*) '****** END READER **********************************'
       if (lpr) then
       endif
-      
+
       return
 c-end-READER 
+      end
+c======================================================================c
+
+      subroutine stability
+
+c======================================================================c
+c
+c     determines initial neutron number for calculation
+c     solves N - Z - 0.006( N + Z)^5/3 = 0
+c----------------------------------------------------------------------c
+      include 'dirhb.par'
+c
+      implicit real*8 (a-h,o-z)
+
+      character*2 nucnam
+      external f_s
+
+      common /nucnuc/ amas,nneu,npro,nmas,nucnam
+      common /optopt/ itx,icm,icou,ipc,inl,idd
+      common /tapes / l6,lin,lou,lwin,lwou,lplo,laka,lvpp
+
+      data epsl/1.d-10/
+
+      write(*,*) 'Determining stability value'
+      ncl = 0
+
+      anx = 2.d0 ! initial guess
+
+      call brak0(f_s,anx,xl,xh,sl,sh,1.d0,iflag)
+      if (iflag.eq.0) stop 'braketing impossible'
+
+
+      ncl = 0
+      anx = rtbrent(f_s,xl,xh,sl,sh,epsl)
+
+      write(*,*) 'Neutron number: ', anx, int(anx)
+c---- has to be even number
+      nneu = int(anx) + mod(int(anx),2)
+      amas = nneu+npro
+      nmas = nneu+npro
+
+c---- nuclear parameters
+      call nucleus(1,npro,nucnam)
+      write(l6,'(a,a,i4,i6,i4)') ' Nucleus: ',nucnam,nmas,nneu,npro
+c      read*
+
+      return
+      end
+
+c--------------------------------------------------------------------c
+      real*8 function f_s(an)
+
+      implicit real*8 (a-h,o-z)
+
+      include 'dirhb.par'
+
+      common /nucnuc/ amas,nneu,npro,nmas,nucnam
+
+
+      f_s = an - dble(npro) - 0.006*(an+dble(npro))**(5.d0/3.d0)
+
+      return
+      end
+c--------------------------------------------------------------------c
+c======================================================================c
+
+
+
+      double precision function rtbrent(func,x1,x2,y1,y2,tol)      
+
+
+
+c======================================================================c
+
+c
+
+c     Using Brent's method find the root of the function FUNC(X) 
+
+c     known to lie between X1 and X2.
+
+c     Y1 = FUNC(X1), Y2 = FUNC(X2) 
+
+c     The root will be returned as RTBRENT with accuracy TOL
+
+c
+
+c     from: NUMERICAL RECIPIES, 9.3
+
+c
+
+c----------------------------------------------------------------------c 
+
+      implicit real*8(a-h,o-z)
+
+      parameter (itmax = 100, eps = 1.d-12)
+
+c     maximum number of iterations, machine floating point precision
+
+      external func
+
+      data zero/0.d0/,one/1.d0/,half/0.5d0/
+
+c
+
+      a  = x1
+
+      b  = x2
+
+      fa = y1
+
+      fb = y2
+
+      if (fa*fb.gt.zero) stop ' in RTBRENT: root must be bracketed'
+
+      fc = fb
+
+      do 10 iter = 1,itmax
+
+         if (fb*fc.gt.zero) then
+
+c           rename a,b,c and adjust bounding interval
+
+            c  = a              
+
+            fc = fa
+
+            d  = b - a
+
+            e  = d
+
+         endif
+
+         if (abs(fc).lt.abs(fb)) then
+
+            a  = b
+
+            b  = c
+
+            c  = a
+
+            fa = fb
+
+            fb = fc
+
+            fc = fa
+
+         endif
+
+c       
+
+c        convergence check
+
+         tol1 = 2*eps*abs(b)+half*tol
+
+         xm = half*(c-b)
+
+         if (abs(xm).le.tol1 .or. fb.eq.zero) then
+
+            rtbrent = b
+
+            return
+
+         endif
+
+c
+
+         if (abs(e).ge.tol1. and. abs(fa).gt.abs(fb)) then
+
+c           attempt inverse quadratic interpolation
+
+            s = fb/fa
+
+            if (a.eq.c) then
+
+               p = 2*xm*s
+
+               q = one - s
+
+            else
+
+               q = fa/fc
+
+               r = fb/fc 
+
+               p = s*(2*xm*q*(q-r) - (b-a)*(r-one))
+
+               q = (q-one)*(r-one)*(s-one)
+
+            endif
+
+            if (p.gt.zero) q = -q
+
+c           check whether in bounds
+
+            p = abs(p)
+
+            if (2*p.lt.dmin1(3*xm*q-abs(tol1*q),abs(e*q))) then
+
+c              accept interpolation
+
+               e = d
+
+               d = p/q
+
+            else
+
+c              interpolation failed, use besection
+
+               d = xm
+
+               e = d
+
+            endif
+
+         else
+
+c           bounds decreasing too slowly, use bisection
+
+            d = xm
+
+            e = d
+
+         endif
+
+c        move last best guess to a
+
+         a  = b
+
+         fa = fb
+
+         if (abs(d).gt.tol1) then
+
+c           evaluate new trial root
+
+            b = b + d
+
+         else
+
+            b = b + sign(tol1,xm)
+
+         endif
+
+         fb = func(b)
+
+c        call numas(b,rs,av,pr,.false.)
+
+c        fb = pr
+
+   10 continue
+
+      stop ' in RTBRENT: exceeding maximum number of iterations'
+
+c     rtbrent = b
+
+c
+
+c-end-RTBRENT
+
+      end
+
+c======================================================================c
+
+
+
+      subroutine brak0(func,x0,x1,x2,f1,f2,step,iflag)
+
+
+
+c======================================================================c
+
+c
+
+c     subroutine for braketing a root of a function
+
+c
+
+c     given a function monotonous groving f(x) = FUNC and 
+
+c     given an initial point X0 this routine searches for an interval
+
+c     such that ther is root of f(x) between x1 and x2
+
+c     x1 < x2
+
+c
+
+c
+
+c     INPUT:  X0   starting point
+
+c             FUNC monotonously growing function of x
+
+c             STEP inital step-size
+
+c
+
+c     OUTPUT: X1,X2 an intervall, which brakets a zero of f(x)
+
+c             F1,F2 values of the function f(x) at x1 and x2
+
+c             IFLAG = 0:  braketing not possible 
+
+c             IFLAG = 1:  braketing was successful
+
+c
+
+c----------------------------------------------------------------------c
+
+      implicit real*8 (a-h,o-z)
+
+c
+
+      external func
+
+c
+
+      data maxit/100/,zero/0.d0/
+
+c
+
+      iflag = 1
+
+c
+
+      x  = x0
+
+      dx = step 
+
+      s  = func(x)
+
+      if (s.lt.zero) then
+
+	 x1 = x
+
+	 f1 = s
+
+	 do i = 1,maxit
+
+	    x = x + dx 
+
+            s = func(x)
+
+	    if (s.gt.zero) then
+
+	       x2 = x
+
+	       f2 = s
+
+	       return   
+
+            else
+
+	       x1 = x
+
+	       f1 = s
+
+            endif
+
+	    dx = 2*dx
+
+         enddo   ! i
+
+c        stop 'in BRAK0 no success in bracketing'
+
+      else
+
+	 x2 = x
+
+	 f2 = s
+
+	 do i = 1,maxit
+
+	    x = x - dx 
+
+            s = func(x)
+
+	    if (s.lt.zero) then
+
+	       x1 = x
+
+	       f1 = s
+
+	       return   
+
+            else 
+
+	       x2 = x
+
+	       f2 = s
+
+            endif
+
+	    dx = 2*dx
+
+         enddo   ! i
+
+c        stop 'in BRAK0 no success in bracketing'
+
+      endif
+
+c
+
+      iflag = 0
+
+c
+
+      return
+
+c-end-BRAK0
+
       end
 
 c======================================================================c
@@ -11226,7 +13513,7 @@ c
 c  
       character tp*1,tis*1,tit*8,tl*1                           ! textex
       character tb*6                                            ! blokap
-      character tt*8                                            ! quaosc
+      character tt*11                                            ! quaosc
       character tph*1
 c
       common /blodir/ ka(NBX,4),kd(NBX,4)
@@ -11308,6 +13595,8 @@ c----------------------------------------------------------------------c
       implicit real*8 (a-h,o-z)
 c
       include 'dirhb.par'
+
+      include 'omp_lib.h'
 c
       logical lpr
 c
@@ -11315,6 +13604,8 @@ c
 c
       dimension pnosc(0:N0FX),vnz(1:MVX,0:N0FX),vnr(1:MVX,0:N0FX)
       dimension wn(MVX)
+      dimension vnztemp(NBX,NFX,NFX,0:N0FX),
+     &          vntemp(NBX,NFX,NFX,0:N0FX) ! Ravlic 
 c
       common /blokap/ nb,kb(NBX),mb(NBX),tb(NBX)
       common /bloosc/ ia(NBX,2),id(NBX,2)
@@ -11334,56 +13625,99 @@ c
 c
       open(544,file='wnn.del',status='unknown',form='unformatted')
 
+      write ( *, * )
+     &  '  The number of processors = ', omp_get_num_procs ( )
+      write ( *, * )
+     &  '  The number of threads    = ', omp_get_max_threads ( )
+
+
       if (imatel.eq.0) then
       write(*,*) 'Calculating pairing matrix elements ... '
 c----------------------------------------------------------------------c
 c     calculate VNZ and VNR
 c----------------------------------------------------------------------c
-      call vvnz(nnzm,pnosc,vnz,.false.)
-      call vvnp(nnrm,pnosc,vnr,.false.)
+      call vvnz(nnzm,pnosc,vnztemp,.false.)
+      call vvnp(nnrm,pnosc,vntemp,.false.)
+
 c     
 c----------------------------------------------------------------------c
 c    calculate the single particle matrix elements WNN 
 c----------------------------------------------------------------------c
-c     write(6,*) 'nnzm =',nnzm
-c     write(6,*) 'nnrm =',nnrm
+      write(6,*) 'nnzm =',nnzm
+      write(6,*) 'nnrm =',nnrm
       nn = 0
       do nnz = 0,nnzm
       do nnr = 0,nnrm
          nn = nn + 1
          if (nn.gt.NNNX) stop 'in VPAIR: NNNX too small'
          smax = zero
-         do i = 1,mv
-            wn(i) = vnz(i,nnz)*vnr(i,nnr)
+c         do i = 1,mv
+          i = 0
+          do ib = 1,nb
+           nf = id(ib,1)
+           do n2 = 1,nf
+            do n1 = n2,nf
+            i = i + 1
+            v1 = vnztemp(ib,n1,n2,nnz)
+            v2 = vntemp(ib,n1,n2,nnr)
+            wn(i) = v1*v2
+            if (v1.ne.v1) then
+                    stop 'NaN in VNZ !'
+            endif
+            if (v2.ne.v2) then
+                    stop 'NaN in VNR !'
+            endif
+
+            if (wn(i).ne.wn(i)) then
+                    write(*,*) v1
+                    write(*,*) v2
+                    write(*,*) wn(i)
+                    stop 'NaN in wn !'
+            endif
             smax = max(smax,abs(wn(i)))
-         enddo   ! i
+          enddo !n1
+          enddo !n2
+          enddo !ib
+c         enddo   ! i
+          mv = i
          if (smax.lt.eps) then
             nn = nn - 1
          else
             do i = 1,mv
                wnn(i,nn) = wn(i)
+               if (wnn(i,nn).ne.wnn(i,nn)) then
+                       stop 'wrong in wnn !'
+               endif
+c               write(*,*) i,nn, wnn(i,nn)
             enddo   ! i
          endif  ! smax < eps
       enddo   ! nnz
       enddo   ! nnr
+c      mv = i ! important to store for later use
+      write(*,*) 'mv = ', mv, mvx
+      if (mv.gt.mvx) then
+              stop 'MVX to small !'
+      endif
+
       nnmax = nn
-c     write(*,*)  'VPAIR: nnmax = ',nnmax,(nnzm+1)*(nnrm+1)
+      write(*,*) 'VPAIR: nnmax = ', nnmax, (nnzm+1)*(nnrm+1)
+c      read*
 c     
 c----------------------------------------------------------------------c
 c    store matrix elements in wnn.del file 
 c----------------------------------------------------------------------c
 
-      k = 0
-      write(544) mv, nnmax
-      do nn = 1,nnmax
-         do i = 1,mv
-         write(544) wnn(i,nn)
-c         write(*,*) i, nn, wnn(i,nn)
-         k = k + 1
-         enddo ! i
-      enddo !nn
-      write(*,*) 'Written ', k+1, ' lines'
-      write(*,*) 'mv, nnmax = ', mv, nnmax
+c       k = 0
+c       write(544) mv, nnmax
+c       do nn = 1,nnmax
+c          do i = 1,mv
+c          write(544) wnn(i,nn)
+cc         write(*,*) i, nn, wnn(i,nn)
+c          k = k + 1
+c          enddo ! i
+c       enddo !nn
+c       write(*,*) 'Written ', k+1, ' lines'
+c       write(*,*) 'mv, nnmax = ', mv, nnmax
       
 
       else if (imatel.eq.1) then
@@ -11392,8 +13726,11 @@ c    read matrix elements from wnn.del file
 c----------------------------------------------------------------------c
          write(*,*) 'Reading pairing matrix elements ...'
          read(544) mv_r, nnmax_r
-         write(*,*) 'mv = ', mv_r, mv
+         write(*,*) 'mv = ', mv_r, mv, mvx
          write(*,*) 'nnmax = ',nnmax_r
+         if (mv_r.gt.mvx) then
+              stop 'MVX to small !'
+         endif
          ! important to define nnmax
          nnmax = nnmax_r
          if (mv_r.ne.mv) then
@@ -11405,6 +13742,10 @@ c----------------------------------------------------------------------c
                    do i =1,mv_r
                      k = k +1
                      read(544) wnn(i,nn)
+                     if (wnn(i,nn).ne.wnn(i,nn)) then
+                             write(*,*) i,nn
+                             stop 'Error in Nan !'
+                     endif
 c                     write(*,*) i, nn, wnn(i,nn)
                    enddo !i
                  enddo !nn
@@ -11445,7 +13786,7 @@ c-end-VPAIR
       end  
 c======================================================================c
 
-      subroutine vvnz(nnzm,pnosc,vnz,lpr)
+      subroutine vvnz(nnzm,pnosc,vnztemp,lpr)
 
 c======================================================================c
 c
@@ -11455,14 +13796,17 @@ c----------------------------------------------------------------------c
       implicit real*8 (a-h,o-z)
 c
       include 'dirhb.par'
+     
 c
       logical lpr
 c
-      character tt*8                                            ! quaosc
+      character tt*11                                            ! quaosc
       character tb*6                                            ! blokap
 c
       dimension pnosc(0:N0FX),vnz(1:MVX,0:N0FX)
+      dimension vnztemp(NBX,NFX,NFX,0:N0FX) ! Ravlic
 c
+      logical results
       common /basnnn/ n0f,n0b
       common /baspar/ hom,hb0,b0 
       common /blokap/ nb,kb(NBX),mb(NBX),tb(NBX)
@@ -11489,7 +13833,12 @@ c----------------------------------------------------------------------c
 c    calculate VNZ 
 c----------------------------------------------------------------------c
       call mzero(MVX,mv,n0f+1,vnz)
+c      call OMP_set_num_threads(1)
       il = 0
+!$omp parallel do                                 
+!$omp+private(nf,i0f,nz2,nz1,n,n2,n1,nn,ib,nh,nnh) 
+!$omp+shared(vnztemp)
+!$omp+schedule(dynamic)
       do ib = 1,nb
          nf = id(ib,1)
          i0f= ia(ib,1)
@@ -11507,44 +13856,76 @@ c
                if (nh .gt.n0f) stop 'in VPAIR: n too large'
                if (nnh.gt.n0f) stop 'in VPAIR: nn too large'
 c   talmos1 is Eq. 17 from the paper
-               vnz(il,nnh) = pnosc(nh)*talmos1(nz1,nz2,nn,n)
+c                vnz(il,nnh) = pnosc(nh)*talmos1(nz1,nz2,nn,n)
+                vnztemp(ib,n1,n2,nnh) = pnosc(nh)*talmos1(nz1,nz2,nn,n)
+                r1 = pnosc(nh)
+                if(r1-1.eq.r1) then
+                        write(*,*) 'Infinity in pnosc !'
+                        write(*,*) nh, pnosc(nh)
+                        stop
+                endif
+                r2 = talmos1(nz1,nz2,nn,n)
+                if(r2-1.eq.r2 ) then
+                        write(*,*) 'Infinity in talmos1 !'
+                        write(*,*) talmos1(nz1,nz2,nn,n)
+                        stop
+                endif
+
+                if (vnztemp(ib,n1,n2,nnh).ne.vnztemp(ib,n1,n2,nnh)) then
+                        stop 'NaN in vnz !'
+                endif
+cc$omp critical
+c                write(*,*) ib,n1,n2,nnh,il,
+c     &            vnztemp(ib,n1,n2,nnh),vnz(il,nnh)
+cc$omp end critical
             enddo   ! nn 	
          endif
 c     
    10 enddo   ! n1
       enddo   ! n2
       enddo   ! ib
-      call icheck_n1nen2(il,mv,'in VPAIR: mv wrong')
+!$omp end parallel do
+c      call icheck_n1nen2(il,mv,'in VPAIR: mv wrong')
 c
 c----------------------------------------------------------------------c
 c---- calculate the maximal nnz:  nnzm 
 c----------------------------------------------------------------------c
+c      il = mv
       nnzm =0
       do nn = 0,n0f
          nx = 0
-         do i = 1,mv
-            if (abs(vnz(i,nn)).gt.eps) then
+c         do i = 1,mv
+c          i = 0
+          do ib = 1,nb
+            nf = id(ib,1)
+            do n2 = 1,nf
+              do n1 = n2,nf
+c              i = i + 1
+            if (abs(vnztemp(ib,n1,n2,nn)).gt.eps) then
                nx = nn
             endif
-         enddo   ! i
+            enddo !n1
+            enddo ! n2
+          enddo !ib
+c         enddo   ! i
          nnzm = max(nnzm,nx)
       enddo   ! nn
 c
 c----------------------------------------------------------------------c
 c---- Printout VNZ 
 c----------------------------------------------------------------------c
-      if (lpr) then
-         na = 0
-         nx = 6
-         nx = min(nx,nnzm)
-         ix = 20
-         ix = min(ix,mv)
-         write(6,*) 'VNZ',ix,mv,na,nx
-         write(6,101) (n,n=na,nx,2)
-         do i = 1,ix
-            write(6,100) i,(vnz(i,n),n=na,nx)
-         enddo   ! i
-      endif
+c      if (lpr) then
+c         na = 0
+c         nx = 6
+c         nx = min(nx,nnzm)
+c         ix = 20
+c         ix = min(ix,mv)
+c         write(6,*) 'VNZ',ix,mv,na,nx
+c         write(6,101) (n,n=na,nx,2)
+c         do i = 1,ix
+c            write(6,100) i,(vnz(i,n),n=na,nx)
+c         enddo   ! i
+c      endif
 c
       if (lpr) then
       write(l6,*) '****** END VVNZ ************************************'
@@ -11564,7 +13945,7 @@ c======================================================================c
       implicit real*8 (a-h,o-z)
       include 'dirhb.par'
 c
-      dimension pnosc(0:nm)
+      double precision pnosc(0:nm)
 c
       common /baspar/ hom,hb0,b0
       common /gfvsq / sq(0:IGFV)
@@ -11581,8 +13962,12 @@ c
       s1 = (a*a-b*b)/(a*a+b*b)
       do nh = 0,nm
          n = 2*nh
-	 pnosc(nh) = s0 * s1**nh * wf(n) / 2**nh * fi(nh)
-
+	 pnosc(nh) = s0 * s1**nh * wf(n) / (2.d0)**nh * fi(nh)
+         ! chech for infinity
+         if (pnosc(nh)-1.eq.pnosc(nh)) then
+          write(*,*) nh,n, pnosc(nh), wf(n), fi(nh), s0, s1**nh,2.d0**nh
+            stop
+         endif
       enddo    ! n
 c     write(6,100) 'PNZ',nm,(pnosc(n),n=0,5)
 c 100 format(a,i3,20f10.6)
@@ -11592,7 +13977,7 @@ c-end-PNOSCZ
       end
 c======================================================================c
 
-      subroutine vvnp(nnrm,pnocz,vn,lpr)
+      subroutine vvnp(nnrm,pnocz,vntemp,lpr)
 
 c======================================================================c
 c
@@ -11603,12 +13988,15 @@ c----------------------------------------------------------------------c
 c
       include 'dirhb.par'
 c
+      include 'omp_lib.h'
+
       logical lpr
 c
-      character tt*8                                            ! quaosc
+      character tt*11                                            ! quaosc
       character tb*6                                            ! blokap
 c
       dimension pnosc(0:N0FX),vn(1:MVX,0:N0FX)
+      dimension vntemp(NBX,NFX,NFX,0:N0FX) ! Ravlic
       dimension pnocz(0:N0FX)
 c
       common /basnnn/ n0f,n0b
@@ -11634,7 +14022,18 @@ c
       call pnoscp(n0f,sqrt(ga),b0p,pnosc)
 c     
       call mzero(MVX,mv,n0f+1,vn)
+c      call OMP_set_num_threads(1)
+cc$omp parallel private(omp_rank)
+c      omp_rank = omp_get_thread_num()
+c      write(*,*) 'Hello by thread n VVNP ', int(omp_rank)
+cc$omp end parallel
+
+c---- Here calculate vntemp(ib,n1,n2,nn)
       il = 0
+!$omp parallel do                                 
+!$omp+private(nf,i0f,nr2,ml2,nr1,ml1,n,n2,n1,nn,ib) 
+!$omp+shared(vntemp)
+!$omp+schedule(dynamic)
       do ib = 1,nb
          nf = id(ib,1)
          i0f= ia(ib,1)
@@ -11645,20 +14044,34 @@ c
          nr1 = nr(i0f+n1)
          ml1 = ml(i0f+n1)
          il  = il + 1        
-c           
+c
+
          if (ml1.eq.ml2) then
             do nn = 0,nr1+nr2+ml1
                n = nr1+nr2+ml1-nn
+
                if (nn.gt.n0f) stop 'in VPAIR: nn too large'
                if (n .gt.n0f) stop 'in VPAIR: n  too large'
-               vn(il,nn) = pnosc(n)*talmos2(ml1,nr1,nr2,0,nn,n) 
-            enddo   ! nn
+c               vn(il,nn) = pnosc(n)*talmos2(ml1,nr1,nr2,0,nn,n)
+              vntemp(ib,n1,n2,nn) = pnosc(n)*talmos2(ml1,nr1,nr2,0,nn,n)
+              if (vntemp(ib,n1,n2,nn).ne.vntemp(ib,n1,n2,nn)) then
+                    stop 'NaN in VNR !'
+              endif  
+cc$omp critical
+c               write(*,*) ib,nf,n1,n2,nr1,nr2,ml1,ml2,nn,n,il,
+c     &           vntemp(ib,n1,n2,nn)
+cc$omp end critical
+
+             enddo   ! nn
          endif   
 c         
       enddo   ! n1
       enddo   ! n2
       enddo   ! ib
-      call icheck_n1nen2(il,mv,'in VVNP: mv wrong')
+!$omp end parallel do
+
+
+c      call icheck_n1nen2(il,mv,'in VVNP: mv wrong')
 c
 c----------------------------------------------------------------------c
 c---- calculate the maximal nnr:  nnrm 
@@ -11666,29 +14079,36 @@ c----------------------------------------------------------------------c
       nnrm = 0
       do nn = 0,n0f
          nx = 0
-         do i = 1,mv
-            if (abs(vn(i,nn)).gt.eps) then
+c         do i = 1,mv
+         do ib = 1,nb
+            nf = id(ib,1)
+            do n2 = 1,nf
+             do n1 = n2,nf
+            if (abs(vntemp(ib,n1,n2,nn)).gt.eps) then
                nx = nn
             endif
-         enddo   ! i
+          enddo !n1
+          enddo !n2
+          enddo !ib
+c         enddo   ! i
          nnrm = max(nnrm,nx)
       enddo   ! nn
 c
 c----------------------------------------------------------------------c
 c---- Printout VN
 c----------------------------------------------------------------------c
-      if (lpr) then
-         ix = 20
-         ix = min(ix,mv)
-         na = 0
-         nx = 6
-         nx = min(nx,nnr0)
-         write(6,*) 'VNR',ix,mv,na,nx
-         write(6,101) (n,n=na,nx)
-         do i = 1,ix
-            write(6,100) i,(vn(i,n),n=na,nx)
-         enddo   ! i
-      endif
+c      if (lpr) then
+c         ix = 20
+c         ix = min(ix,mv)
+c         na = 0
+c         nx = 6
+c         nx = min(nx,nnr0)
+c         write(6,*) 'VNR',ix,mv,na,nx
+c         write(6,101) (n,n=na,nx)
+c         do i = 1,ix
+c            write(6,100) i,(vn(i,n),n=na,nx)
+c         enddo   ! i
+c      endif
 c
       if (lpr) then
       write(l6,*) '****** END VVNP ************************************'
@@ -11971,7 +14391,7 @@ c
 c
       logical lpr
 c
-      character tt*8                                            ! quaosc
+      character tt*11                                            ! quaosc
       character tb*6                                            ! blokap
 c
       dimension aa(ng,nf)
@@ -12067,7 +14487,7 @@ c
 c
       logical lpr
 c
-      character tt*8                                            ! quaosc
+      character tt*11                                            ! quaosc
       character tb*6                                            ! blokap
 c
       dimension aa(nd,nd)
