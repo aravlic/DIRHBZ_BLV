@@ -55,7 +55,7 @@ Calculate pairing matrix element (0), or read from the ```wnn.del```file (1).
 
 -------------------------------------------
 
-The code used MPI to split the calculation of potential energy surface on different CPUs. The number of CPUs is hardcoded to 11, however, this can be changed with minimal modification of the code. To run the code, after successful compilation, use:
+The code uses MPI to split the calculation of potential energy surface on different CPUs. The number of CPUs is hardcoded to 11, however, this can be changed with minimal modification of the code. To run the code, after successful compilation, use:
 ```mpirun -np 11 ./run```
 
 -------------------------------------------
@@ -84,7 +84,7 @@ The vector densities are plotted in an $(r,z)$ plane for the Nucleus+Vapor syste
 
 -------------------------------------------
 
-To benchmark the compilation we have included the ```results.out```file which contains an example run with the provided ```dirhb.dat``` file.
+To benchmark the compilation we have included the ```results.out```file which contains an example run with the provided ```dirhb.dat``` file. As an example calculation, we consider ${}^{180}$Sm with 16 oscillator shells, DD-PC1 interaction, and temperature $T = 1.01$ MeV.
 
 
 
